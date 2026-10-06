@@ -1,0 +1,1 @@
+# add this module's dependencies here (smartsecure-common is installed automatically)

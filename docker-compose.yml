@@ -1,0 +1,113 @@
+name: smartsecure
+
+x-mqtt: &mqtt
+  MQTT_HOST: mosquitto
+  MQTT_PORT: "8883"
+  MQTT_CA_FILE: /certs/ca.crt
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports: ["8883:8883"]
+    # Bind-mounted passwd/acl show up as root:root/0777 on Windows Docker
+    # Desktop (host chmod cannot fix that), so copy them in-container to
+    # owner-only files before starting the broker. Silences Mosquitto's
+    # "world readable / owner is not mosquitto" warnings on every platform.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cp /mnt/passwd /mosquitto/config/passwd
+        cp /mnt/acl.conf /mosquitto/config/acl.conf
+        chown 1883:1883 /mosquitto/config/passwd /mosquitto/config/acl.conf
+        chmod 600 /mosquitto/config/passwd
+        chmod 640 /mosquitto/config/acl.conf
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./infra/mosquitto/passwd:/mnt/passwd:ro
+      - ./infra/mosquitto/acl.conf:/mnt/acl.conf:ro
+      - ./infra/certs:/mosquitto/certs:ro
+      - mosquitto_data:/mosquitto/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [pg_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: api}}
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8443",
+              "--ssl-keyfile", "/certs/api.key", "--ssl-certfile", "/certs/api.crt"]
+    ports: ["8443:8443"]            # HTTPS: https://localhost:8443/docs
+    environment:
+      <<: *mqtt
+      MQTT_USER: api
+      MQTT_PASSWORD: ${MQTT_PASSWORD_API}
+      MQTT_CLIENT_CERT: /certs/clients/api.crt
+      MQTT_CLIENT_KEY: /certs/clients/api.key
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
+      API_USERS: ${API_USERS}
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}   # dev .env sets true; never in production
+    volumes: [./infra/certs:/certs:ro]
+    depends_on:
+      postgres: {condition: service_healthy}
+      mosquitto: {condition: service_started}
+    restart: unless-stopped
+
+  simulators:
+    build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: simulators}}
+    environment:
+      {<<: *mqtt, MQTT_USER: simulators, MQTT_PASSWORD: "${MQTT_PASSWORD_SIMULATORS}",
+       MQTT_CLIENT_CERT: /certs/clients/simulators.crt, MQTT_CLIENT_KEY: /certs/clients/simulators.key}
+    volumes: ["./infra/certs:/certs:ro"]
+    depends_on: [mosquitto]
+    restart: unless-stopped
+
+  vision:
+    build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: vision}}
+    environment:
+      {<<: *mqtt, MQTT_USER: vision, MQTT_PASSWORD: "${MQTT_PASSWORD_VISION}",
+       MQTT_CLIENT_CERT: /certs/clients/vision.crt, MQTT_CLIENT_KEY: /certs/clients/vision.key}
+    volumes: ["./infra/certs:/certs:ro"]
+    depends_on: [mosquitto]
+    restart: unless-stopped
+
+  cyber:
+    build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: cyber}}
+    environment:
+      {<<: *mqtt, MQTT_USER: cyber, MQTT_PASSWORD: "${MQTT_PASSWORD_CYBER}",
+       MQTT_CLIENT_CERT: /certs/clients/cyber.crt, MQTT_CLIENT_KEY: /certs/clients/cyber.key}
+    volumes: ["./infra/certs:/certs:ro"]
+    depends_on: [mosquitto]
+    restart: unless-stopped
+
+  engine:
+    build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: engine}}
+    environment:
+      {<<: *mqtt, MQTT_USER: engine, MQTT_PASSWORD: "${MQTT_PASSWORD_ENGINE}",
+       MQTT_CLIENT_CERT: /certs/clients/engine.crt, MQTT_CLIENT_KEY: /certs/clients/engine.key}
+    volumes: ["./infra/certs:/certs:ro", "./config:/config:ro"]
+    depends_on: [mosquitto]
+    restart: unless-stopped
+
+  frontend:
+    build: ./services/frontend
+    ports: ["${DASHBOARD_PORT:-8080}:80"]   # override in .env if 8080 is taken
+    restart: unless-stopped
+
+volumes:
+  mosquitto_data:
+  pg_data:

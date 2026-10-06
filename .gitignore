@@ -1,0 +1,14 @@
+.env
+infra/certs/*
+!infra/certs/.gitkeep
+infra/mosquitto/passwd
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+node_modules/
+.venv/
+.idea/
+.vscode/
+data/

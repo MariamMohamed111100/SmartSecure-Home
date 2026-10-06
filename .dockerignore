@@ -1,0 +1,17 @@
+# Secrets and generated credentials are bind-mounted at runtime, never baked into images.
+.env
+.env.*
+infra/certs/
+infra/mosquitto/passwd
+
+# VCS, CI and build artifacts
+.git/
+.github/
+.venv/
+node_modules/
+data/
+**/__pycache__/
+*.pyc
+*.egg-info/
+.ruff_cache/
+**/.pytest_cache/

@@ -1,0 +1,19 @@
+# Owned by Person 6 (engine). Values come from the proposal. Change here, not in code.
+decay_minutes: 10          # an event stops counting this long after it happened
+events:
+  face.unknown: 40
+  motion.night: 20
+  lock.login_failed: 30
+  cyber.port_scan: 25
+  camera.disconnected: 35
+  smoke.detected: 100
+levels:                    # inclusive lower bounds
+  low: 0
+  medium: 31
+  high: 61
+  critical: 91
+responses:                 # actions are cumulative as the level escalates
+  low: [log]
+  medium: [log, notify]
+  high: [log, notify, lights_on, siren]
+  critical: [log, notify, lights_on, siren, lock_doors, block_ip]
