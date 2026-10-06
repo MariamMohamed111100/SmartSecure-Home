@@ -30,11 +30,19 @@ if command -v mosquitto_passwd >/dev/null 2>&1; then
     v="MQTT_PASSWORD_$(upper "$u")"; mosquitto_passwd -b "$OUT" "$u" "${!v}"
   done
 else
+  # Run the generator as the invoking user so the written file is ours and the
+  # host `chmod 600` below succeeds (Linux) instead of aborting on a root-owned
+  # bind-mount file. Omitted on MSYS where Docker Desktop maps the FS itself.
+  user_arg=()
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) command -v id >/dev/null 2>&1 && user_arg=(--user "$(id -u):$(id -g)") || true ;;
+  esac
   cmds=""
   for u in "${USERS[@]}"; do
     v="MQTT_PASSWORD_$(upper "$u")"; cmds+="mosquitto_passwd -b /work/passwd $u ${!v}; "
   done
-  docker run --rm -v "$PWD/infra/mosquitto:/work" eclipse-mosquitto:2 sh -c "$cmds"
+  docker run "${user_arg[@]}" --rm -v "$PWD/infra/mosquitto:/work" eclipse-mosquitto:2 sh -c "$cmds"
 fi
 chmod 600 "$OUT"   # owner-only; the broker entrypoint fixes ownership in-container
 echo ">> MQTT users written: ${USERS[*]}"

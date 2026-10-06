@@ -7,9 +7,9 @@ then moved to Raspberry Pi hardware (milestone M4).
 ## Quick start (any laptop with Docker and openssl)
 
 ```bash
-make setup     # random secrets -> .env, local CA + TLS certs, MQTT users
+make setup     # REQUIRED on a fresh clone: random secrets -> .env, local CA + TLS certs, MQTT users
 make up        # build and start everything
-make smoke     # proves every service talks through the TLS broker
+make smoke     # proves every service talks through the TLS broker, mTLS + ACLs, API auth
 ```
 
 **Windows:** run everything from **Git Bash** (not PowerShell/cmd) — the scripts are bash and
@@ -18,31 +18,43 @@ already disable MSYS path conversion themselves. **Port 8080 taken?** set `DASHB
 
 | Thing | URL |
 |---|---|
+| Dashboard + same-origin `/api` proxy (reverse proxy → HTTPS API, no CORS) | http://localhost:8080 |
 | API docs (HTTPS, self-signed CA in `infra/certs/ca.crt`) | https://localhost:8443/docs |
-| Dashboard | http://localhost:8080 |
 | MQTT broker (TLS only) | `localhost:8883` |
+| Demo rig (`docker compose --profile demo up`): RTSP | `rtsp://localhost:8554` |
+| Demo rig: ntfy push notifications | http://localhost:8090 |
 
 Debug a topic live:
 ```bash
-docker compose exec mosquitto mosquitto_sub -h localhost -p 8883 --cafile /mosquitto/certs/ca.crt \
-  --cert /mosquitto/certs/clients/admin.crt --key /mosquitto/certs/clients/admin.key \
+docker compose exec mosquitto mosquitto_sub -h localhost -p 8883 --cafile /mosquitto/config/certs/ca.crt \
+  --cert /mosquitto/config/certs/admin.crt --key /mosquitto/config/certs/admin.key \
   -u admin -P "$(grep MQTT_PASSWORD_ADMIN .env | cut -d= -f2)" -t 'security/#' -v
 ```
 
 ## Security model
 - **Mutual TLS MQTT** (`localhost:8883`, TLS 1.3 only): the broker requires a client
-  certificate signed by the local CA (`infra/certs/clients/*`); the CN is the MQTT
-  username. Clients without a valid certificate are rejected. The password file is
-  kept for listener fallback but cert possession is the authentication.
-- **JWT-protected API** (`https://localhost:8443`): `POST /auth/login` issues a token;
-  everything but `/health` requires `Authorization: Bearer <token>`. Login attempts are
-  rate-limited (5 failures/minute). Swagger serves only with `API_DOCS_ENABLED=true`.
+  certificate signed by the local CA; the CN is the MQTT username.
+  **Every container mounts only its own client cert + CA certificate**, and private keys are
+  served as Docker secrets (`/run/secrets/`, mode 0444) — never through a bind mount. The
+  CA private key (`infra/ca/ca.key`) stays on the host, so a compromised service **cannot
+  mint certificates** or impersonate another service, and per-service ACLs
+  (`infra/mosquitto/acl.conf`) stop it reading/writing outside its lane. The smoke test
+  asserts both directions: cert-less clients are refused *and* a service cannot read an
+  engine-only topic.
+- **JWT-protected API** (via the dashboard's `/api` reverse proxy, TLS verified against the local CA):
+  `POST /auth/login` issues a token; everything but `/health` requires
+  `Authorization: Bearer <token>`. Login attempts are rate-limited (5 failures/minute),
+  passwords compare constant-time, and Swagger serves only with `API_DOCS_ENABLED=true`.
+- **At-rest encryption (API, Person 2)**: persisted records are sealed with AES-256-GCM
+  (`libs/common/smartsecure_common/crypto.py`, key `STORAGE_KEY`); tampering fails closed.
+- **Fire safety policy**: `block_ip` fires from level **High** (so the demo pans out), and at
+  **Critical** doors are *unlocked*, never locked (`config/risk_scores.yaml`).
 - **Secrets never in git**: `.env`, certificates and MQTT passwords are git-ignored and
-  excluded from Docker build contexts (`.dockerignore`). CI runs `gitleaks`, `pip-audit`
-  and CodeQL so a leak or CVE fails a PR.
+  excluded from Docker build contexts (`.dockerignore`). All files use LF line endings
+  (`.gitattributes`). CI runs `gitleaks`, `pip-audit` and CodeQL so a leak or CVE fails a PR.
 - **Dev CA caveat**: certificates are self-signed dev artifacts with finite lifetimes
-  (CA 5y, leaves 397d). Rotate by deleting `infra/certs/*` and re-running
-  `./scripts/setup.sh`. Do not ship these to a real deployment.
+  (CA 5y, leaves 397d). Rotate by deleting `infra/certs/*` (and `infra/ca/`, to re-key the
+  CA) and re-running `./scripts/setup.sh`. Do not ship these to a real deployment.
 
 ## Repo layout
 
@@ -57,6 +69,9 @@ docs/                 CONTRACT, BRANCHING, STANDUP, DEMO_SCRIPT
 ```
 
 ## Module owners (Milestone 1)
+
+Owner-side setup (one-time, manual): enable the `main` branch-protection rule and replace the
+placeholder handles in `.github/CODEOWNERS` — see `docs/BRANCHING.md`.
 
 | # | Module | Folder |
 |---|---|---|

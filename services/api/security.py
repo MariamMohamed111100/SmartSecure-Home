@@ -7,6 +7,7 @@ token handling.
 """
 from __future__ import annotations
 
+import hmac
 import os
 import threading
 import time
@@ -35,13 +36,17 @@ def create_token(subject: str) -> str:
 
 
 def verify_user(name: str, password: str) -> bool:
+    wanted = None
     for pair in os.getenv("API_USERS", "").split(","):
         if ":" not in pair:
             continue
         user, secret = pair.split(":", 1)
-        if user.strip() == name and secret == password:
-            return True
-    return False
+        if user.strip() == name:
+            wanted = secret
+    # Constant-time compare to avoid timing side channels on password length.
+    if wanted is None:
+        return False
+    return hmac.compare_digest(wanted.encode(), password.encode())
 
 
 def require_token(

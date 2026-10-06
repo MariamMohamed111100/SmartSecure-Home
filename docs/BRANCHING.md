@@ -9,3 +9,7 @@
 
 ## GitHub settings to enable (Settings > Branches > Add rule for `main`)
 Require pull request, require 1 approval, require status checks `lint-test` and `docker`, block force pushes.
+
+> **Manual, owner-side steps before the team pushes:** enable the branch protection rule above
+> (it cannot be committed), and replace the placeholder handles in `.github/CODEOWNERS` with real
+> GitHub usernames/teams. Until then the `USER`@example.com owners are decorative.

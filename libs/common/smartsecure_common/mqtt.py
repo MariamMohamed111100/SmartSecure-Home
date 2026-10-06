@@ -25,7 +25,7 @@ def connect(service: str, timeout: float = 30.0) -> mqtt.Client:
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"{service}-{os.getpid()}")
     client.username_pw_set(os.getenv("MQTT_USER", service), os.environ["MQTT_PASSWORD"])
     # Verifies the broker certificate against our local CA and presents our
-    # client certificate (the broker requires mTLS: password AND certificate).
+    # client certificate (the broker requires mutual TLS; the CN is the user).
     certfile = os.getenv("MQTT_CLIENT_CERT") or None
     keyfile = os.getenv("MQTT_CLIENT_KEY") or None
     client.tls_set(

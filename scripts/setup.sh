@@ -18,10 +18,16 @@ if [ ! -f .env ]; then
     echo "API_USERS=admin:$(rand)"
     echo "API_DOCS_ENABLED=true   # dev only; NEVER true in production"
     echo "DASHBOARD_PORT=8080"
+    echo "STORAGE_KEY=$(rand)"
     for s in ADMIN API SIMULATORS VISION CYBER ENGINE; do echo "MQTT_PASSWORD_$s=$(rand)"; done
   } > .env
   chmod 600 .env
 else
+  # Windows editors often save .env as CRLF, which makes `set -a; . ./.env`
+  # deliver values with a trailing \r to Docker/OpenSSL. Normalize and never
+  # touch the .env if any of the required keys are missing (someone edited it).
+  sed -i 's/\r$//' .env
+  if ! grep -q '^STORAGE_KEY=' .env; then echo "STORAGE_KEY=$(rand)" >> .env; fi
   echo ">> .env already exists, keeping it"
 fi
 

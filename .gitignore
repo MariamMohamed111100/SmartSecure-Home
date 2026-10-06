@@ -1,6 +1,8 @@
 .env
 infra/certs/*
 !infra/certs/.gitkeep
+# CA private key + serial: must never leave the host
+infra/ca/
 infra/mosquitto/passwd
 __pycache__/
 *.pyc
@@ -11,4 +13,5 @@ node_modules/
 .venv/
 .idea/
 .vscode/
-data/
+# runtime snapshot/export mount; NOT libs/common/tests/data
+/data/

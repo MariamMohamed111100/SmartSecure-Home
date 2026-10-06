@@ -1,5 +1,9 @@
 name: smartsecure
 
+# Shared MQTT connection settings for Python services (contract section 6).
+# Every service gets its OWN client certificate/secret mounted below; nothing
+# ever mounts the whole certs dir, so a compromised service cannot mint certs
+# (ca.key stays on the host under infra/ca/) or impersonate another service.
 x-mqtt: &mqtt
   MQTT_HOST: mosquitto
   MQTT_PORT: "8883"
@@ -9,26 +13,38 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2
     ports: ["8883:8883"]
-    # Bind-mounted passwd/acl show up as root:root/0777 on Windows Docker
+    # Bind-mounted passwd/acl/certs show up as root:root/0777 on Windows Docker
     # Desktop (host chmod cannot fix that), so copy them in-container to
-    # owner-only files before starting the broker. Silences Mosquitto's
-    # "world readable / owner is not mosquitto" warnings on every platform.
+    # owner-only files before starting the broker. CA key is never in this image.
     command:
       - /bin/sh
       - -c
       - |
+        set -e
+        mkdir -p /mosquitto/config/certs
         cp /mnt/passwd /mosquitto/config/passwd
         cp /mnt/acl.conf /mosquitto/config/acl.conf
+        cp /mnt/certs/ca.crt /mosquitto/config/certs/ca.crt
+        cp /mnt/certs/mosquitto.crt /mosquitto/config/certs/mosquitto.crt
+        cp /mnt/certs/admin.crt /mosquitto/config/certs/admin.crt
+        cp /run/secrets/mosquitto_key /mosquitto/config/certs/mosquitto.key
+        cp /run/secrets/admin_key /mosquitto/config/certs/admin.key
         chown 1883:1883 /mosquitto/config/passwd /mosquitto/config/acl.conf
+        chown -R 1883:1883 /mosquitto/config/certs
         chmod 600 /mosquitto/config/passwd
+        chmod 644 /mosquitto/config/certs/ca.crt /mosquitto/config/certs/*.crt
+        chmod 600 /mosquitto/config/certs/*.key
         chmod 640 /mosquitto/config/acl.conf
         exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
     volumes:
       - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./infra/mosquitto/passwd:/mnt/passwd:ro
       - ./infra/mosquitto/acl.conf:/mnt/acl.conf:ro
-      - ./infra/certs:/mosquitto/certs:ro
+      - ./infra/certs/ca.crt:/mnt/certs/ca.crt:ro
+      - ./infra/certs/mosquitto.crt:/mnt/certs/mosquitto.crt:ro
+      - ./infra/certs/clients/admin.crt:/mnt/certs/admin.crt:ro
       - mosquitto_data:/mosquitto/data
+    secrets: [mosquitto_key, admin_key]
     restart: unless-stopped
 
   postgres:
@@ -47,21 +63,28 @@ services:
   api:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: api}}
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8443",
-              "--ssl-keyfile", "/certs/api.key", "--ssl-certfile", "/certs/api.crt"]
-    ports: ["8443:8443"]            # HTTPS: https://localhost:8443/docs
+              "--ssl-keyfile", "/run/secrets/api_key", "--ssl-certfile", "/certs/api.crt"]
+    ports: ["8443:8443"]            # HTTPS: https://localhost:8443/docs (dev only)
     environment:
       <<: *mqtt
       MQTT_USER: api
       MQTT_PASSWORD: ${MQTT_PASSWORD_API}
       MQTT_CLIENT_CERT: /certs/clients/api.crt
-      MQTT_CLIENT_KEY: /certs/clients/api.key
+      MQTT_CLIENT_KEY: /run/secrets/api_client_key
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
       JWT_ALGORITHM: ${JWT_ALGORITHM}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
       API_USERS: ${API_USERS}
       API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}   # dev .env sets true; never in production
-    volumes: [./infra/certs:/certs:ro]
+      STORAGE_KEY: ${STORAGE_KEY}
+      SNAPSHOT_DIR: /data/snapshots
+    volumes:
+      - ./infra/certs/ca.crt:/certs/ca.crt:ro
+      - ./infra/certs/api.crt:/certs/api.crt:ro
+      - ./infra/certs/clients/api.crt:/certs/clients/api.crt:ro
+      - data:/data
+    secrets: [api_key, api_client_key]
     depends_on:
       postgres: {condition: service_healthy}
       mosquitto: {condition: service_started}
@@ -71,8 +94,11 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: simulators}}
     environment:
       {<<: *mqtt, MQTT_USER: simulators, MQTT_PASSWORD: "${MQTT_PASSWORD_SIMULATORS}",
-       MQTT_CLIENT_CERT: /certs/clients/simulators.crt, MQTT_CLIENT_KEY: /certs/clients/simulators.key}
-    volumes: ["./infra/certs:/certs:ro"]
+       MQTT_CLIENT_CERT: /certs/clients/simulators.crt, MQTT_CLIENT_KEY: /run/secrets/sim_client_key}
+    volumes:
+      - ./infra/certs/ca.crt:/certs/ca.crt:ro
+      - ./infra/certs/clients/simulators.crt:/certs/clients/simulators.crt:ro
+    secrets: [sim_client_key]
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -80,8 +106,12 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: vision}}
     environment:
       {<<: *mqtt, MQTT_USER: vision, MQTT_PASSWORD: "${MQTT_PASSWORD_VISION}",
-       MQTT_CLIENT_CERT: /certs/clients/vision.crt, MQTT_CLIENT_KEY: /certs/clients/vision.key}
-    volumes: ["./infra/certs:/certs:ro"]
+       MQTT_CLIENT_CERT: /certs/clients/vision.crt, MQTT_CLIENT_KEY: /run/secrets/vision_client_key}
+    volumes:
+      - ./infra/certs/ca.crt:/certs/ca.crt:ro
+      - ./infra/certs/clients/vision.crt:/certs/clients/vision.crt:ro
+      - data:/data            # snapshots written here; api + dashboard read them
+    secrets: [vision_client_key]
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -89,8 +119,11 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: cyber}}
     environment:
       {<<: *mqtt, MQTT_USER: cyber, MQTT_PASSWORD: "${MQTT_PASSWORD_CYBER}",
-       MQTT_CLIENT_CERT: /certs/clients/cyber.crt, MQTT_CLIENT_KEY: /certs/clients/cyber.key}
-    volumes: ["./infra/certs:/certs:ro"]
+       MQTT_CLIENT_CERT: /certs/clients/cyber.crt, MQTT_CLIENT_KEY: /run/secrets/cyber_client_key}
+    volumes:
+      - ./infra/certs/ca.crt:/certs/ca.crt:ro
+      - ./infra/certs/clients/cyber.crt:/certs/clients/cyber.crt:ro
+    secrets: [cyber_client_key]
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -98,16 +131,72 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: engine}}
     environment:
       {<<: *mqtt, MQTT_USER: engine, MQTT_PASSWORD: "${MQTT_PASSWORD_ENGINE}",
-       MQTT_CLIENT_CERT: /certs/clients/engine.crt, MQTT_CLIENT_KEY: /certs/clients/engine.key}
-    volumes: ["./infra/certs:/certs:ro", "./config:/config:ro"]
+       MQTT_CLIENT_CERT: /certs/clients/engine.crt, MQTT_CLIENT_KEY: /run/secrets/engine_client_key}
+    volumes:
+      - ./infra/certs/ca.crt:/certs/ca.crt:ro
+      - ./infra/certs/clients/engine.crt:/certs/clients/engine.crt:ro
+      - ./config:/config:ro
+    secrets: [engine_client_key]
     depends_on: [mosquitto]
     restart: unless-stopped
 
+  # Dashboard: static page + reverse proxy. The browser talks to ONE origin
+  # (http://localhost:8080): /api/* and /ws/* are proxied to the HTTPS API with
+  # CA verification, so there is no CORS and WebSockets work as WSS.
   frontend:
     build: ./services/frontend
-    ports: ["${DASHBOARD_PORT:-8080}:80"]   # override in .env if 8080 is taken
+    ports: ["${DASHBOARD_PORT:-8080}:80"]
+    volumes:
+      - ./infra/certs/ca.crt:/certs/ca.crt:ro
+      - data:/data
+    depends_on: [api]
+    restart: unless-stopped
+
+  # ---- Demo/profile services (P4/P5). Start with: docker compose --profile demo up
+  # They do NOT affect `docker compose up` (CI, everyday dev) - see docs/CONTRACT.md.
+  rtsp:
+    image: bluenoir/mediamtx:latest
+    profiles: ["demo"]
+    ports: ["8554:8554"]        # camera feed for the vision pipeline (P4)
+    restart: unless-stopped
+
+  attacker:
+    image: alpine:3.20
+    profiles: ["demo"]
+    # Placeholder (P5 replaces with the real attack runner): loops a port scan
+    # so Suricata (below) sees live attack traffic to demo the auto-block flow.
+    command: ["sh", "-c", "apk add --no-cache nmap >/dev/null 2>&1; while true; do nmap -sS -sV -p 22,80,443,8554 api vision rtsp 2>/dev/null; sleep 60; done"]
+    restart: unless-stopped
+
+  # Inline Suricata: shares the attacker's network namespace, so it sniffs the
+  # live attack traffic. Drop rules into this container for the demos.
+  suricata:
+    image: jasonish/suricata:7.1.0
+    network_mode: service:attacker
+    profiles: ["demo"]
+    depends_on: [attacker]
+    cap_add: [NET_ADMIN, NET_RAW, SYS_MODULE]
+    restart: unless-stopped
+
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    profiles: ["demo"]
+    ports: ["8090:80"]          # push notifications for risk alerts (P3)
     restart: unless-stopped
 
 volumes:
   mosquitto_data:
   pg_data:
+  data:                     # shared snapshot/export volume: vision (write), api+frontend (read)
+
+secrets:
+  # Private keys never touch a mounted directory; Docker serves them as
+  # root-owned mode-0444 files in /run/secrets/, readable by any uid.
+  mosquitto_key: {file: ./infra/certs/mosquitto.key}
+  admin_key: {file: ./infra/certs/clients/admin.key}
+  api_key: {file: ./infra/certs/api.key}
+  api_client_key: {file: ./infra/certs/clients/api.key}
+  sim_client_key: {file: ./infra/certs/clients/simulators.key}
+  vision_client_key: {file: ./infra/certs/clients/vision.key}
+  cyber_client_key: {file: ./infra/certs/clients/cyber.key}
+  engine_client_key: {file: ./infra/certs/clients/engine.key}

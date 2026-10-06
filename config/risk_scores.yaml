@@ -3,17 +3,28 @@ decay_minutes: 10          # an event stops counting this long after it happened
 events:
   face.unknown: 40
   motion.night: 20
+  motion.outdoor: 20
   lock.login_failed: 30
-  cyber.port_scan: 25
+  door.open: 30
+  temperature.abnormal: 20
+  valve.closed: 15
   camera.disconnected: 35
   smoke.detected: 100
+  fire.detected: 100
+  gas.detected: 80
+  cyber.port_scan: 25
 levels:                    # inclusive lower bounds
   low: 0
   medium: 31
   high: 61
   critical: 91
-responses:                 # actions are cumulative as the level escalates
+# responses are cumulative as the level escalates. block_ip starts at High so a
+# High incident (e.g. the demo's 85) actually drops the attacker. Critical
+# UNLOCKS doors instead of locking them — locked doors during a fire are a
+# death trap; an explicit device lock can still be sent via home/.../cmd when
+# an intrusion escalation policy calls for it.
+responses:
   low: [log]
   medium: [log, notify]
-  high: [log, notify, lights_on, siren]
-  critical: [log, notify, lights_on, siren, lock_doors, block_ip]
+  high: [log, notify, lights_on, siren, block_ip]
+  critical: [log, notify, lights_on, siren, block_ip, unlock_doors]

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Passes only if: every service heartbeats through the TLS broker, the broker
-# rejects clients without a client certificate (mTLS), and the API enforces JWT.
+# rejects cert-less clients (mTLS) and cross-service ACL reads (least
+# privilege), and the API enforces JWT (contract section 5).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 # Windows (Git Bash/MSYS): disable argument path conversion. Without this, MSYS
@@ -22,12 +23,13 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 set -a; . ./.env; set +a
 EXPECTED=(api simulators vision cyber engine)
-CERT="--cert /mosquitto/certs/clients/admin.crt --key /mosquitto/certs/clients/admin.key"
+# admin client cert is copied into the mosquitto container by its entrypoint
+CERT="--cert /mosquitto/config/certs/admin.crt --key /mosquitto/config/certs/admin.key"
 fail=0
 
 echo ">> Listening for heartbeats (15s)..."
 OUT=$(docker compose exec -T mosquitto mosquitto_sub -h localhost -p 8883 \
-  --cafile /mosquitto/certs/ca.crt $CERT -u admin -P "$MQTT_PASSWORD_ADMIN" \
+  --cafile /mosquitto/config/certs/ca.crt $CERT -u admin -P "$MQTT_PASSWORD_ADMIN" \
   -t 'system/heartbeat/#' -v -W 15 2>&1 || true)
 
 for s in "${EXPECTED[@]}"; do
@@ -36,12 +38,74 @@ done
 
 echo ">> mTLS: the broker must reject clients without a certificate..."
 PLAIN=$(docker compose exec -T mosquitto mosquitto_sub -h localhost -p 8883 \
-  --cafile /mosquitto/certs/ca.crt -u admin -P "$MQTT_PASSWORD_ADMIN" \
+  --cafile /mosquitto/config/certs/ca.crt -u admin -P "$MQTT_PASSWORD_ADMIN" \
   -t 'system/heartbeat/#' -W 3 2>&1 || true)
 if grep -q "system/heartbeat/" <<<"$PLAIN"; then
   echo "  FAIL  broker accepted a client without a certificate"; fail=1
 else
   echo "  OK    certificate-less client refused"
+fi
+
+echo ">> ACL: a service MUST NOT read outside its lane..."
+# mosquitto authorises at message DELIVERY, not at SUBSCRIBE time (the SUBACK
+# is always granted), so judge by delivery: simulators subscribes while engine
+# (allowed to write security/risk) publishes a marker. No message may arrive.
+SUB=$(mktemp); trap 'rm -f "$SUB"' EXIT
+docker compose exec -T simulators python - <<'PY' >"$SUB" 2>&1 &
+import os
+import time
+
+import paho.mqtt.client as mqtt
+
+got = []
+
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    if not getattr(reason_code, "is_failure", False):
+        client.subscribe("security/risk", qos=1)  # engine-only read
+
+def on_message(client, userdata, msg):
+    got.append(msg.payload.decode())
+
+c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="acl-negative-sub")
+c.tls_set(ca_certs="/certs/ca.crt",
+          certfile="/certs/clients/simulators.crt",
+          keyfile="/run/secrets/sim_client_key")
+c.username_pw_set("simulators", os.environ["MQTT_PASSWORD"])
+c.on_connect = on_connect
+c.on_message = on_message
+c.connect("mosquitto", 8883, 60)
+c.loop_start()
+time.sleep(8)
+print("RECEIVED:" + ",".join(got) if got else "NO_MESSAGE")
+PY
+SUB_PID=$!
+sleep 2
+docker compose exec -T engine python - <<'PY'
+import os
+import time
+
+import paho.mqtt.client as mqtt
+
+c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="acl-negative-pub")
+c.tls_set(ca_certs="/certs/ca.crt",
+          certfile="/certs/clients/engine.crt",
+          keyfile="/run/secrets/engine_client_key")
+c.username_pw_set("engine", os.environ["MQTT_PASSWORD"])
+
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    if not getattr(reason_code, "is_failure", False):
+        c.publish("security/risk", b"acl-probe", qos=1)
+
+c.on_connect = on_connect
+c.connect("mosquitto", 8883, 60)
+c.loop_start()
+time.sleep(4)
+PY
+wait "$SUB_PID"
+if grep -q NO_MESSAGE "$SUB"; then
+  echo "  OK    simulators cannot read security/risk"
+else
+  echo "  FAIL  ACL negative check: simulators received security/risk"; fail=1
 fi
 
 echo ">> API auth: JWT must be required (contract section 5)..."

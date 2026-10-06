@@ -36,3 +36,5 @@ def heartbeat(service: str) -> str:
 
 RISK = "security/risk"
 INCIDENTS = "security/incidents"
+# One-way command channel: engine @P1/P6 instructs cyber to drop an IP.
+BLOCK = "system/block"
