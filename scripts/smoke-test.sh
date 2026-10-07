@@ -69,7 +69,7 @@ def on_message(client, userdata, msg):
 c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="acl-negative-sub")
 c.tls_set(ca_certs="/certs/ca.crt",
           certfile="/certs/clients/simulators.crt",
-          keyfile="/run/secrets/sim_client_key")
+          keyfile="/run/app-secrets/sim_client_key")
 c.username_pw_set("simulators", os.environ["MQTT_PASSWORD"])
 c.on_connect = on_connect
 c.on_message = on_message
@@ -89,7 +89,7 @@ import paho.mqtt.client as mqtt
 c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="acl-negative-pub")
 c.tls_set(ca_certs="/certs/ca.crt",
           certfile="/certs/clients/engine.crt",
-          keyfile="/run/secrets/engine_client_key")
+          keyfile="/run/app-secrets/engine_client_key")
 c.username_pw_set("engine", os.environ["MQTT_PASSWORD"])
 
 def on_connect(client, userdata, flags, reason_code, properties=None):

@@ -59,7 +59,12 @@ issue api       "DNS:api,DNS:localhost,IP:127.0.0.1"
 for u in admin api simulators vision cyber engine; do issue_client "$u"; done
 
 # Private keys: owner-only on the host. Containers read them through Docker
-# secrets (mode 0444) or an entrypoint chown, never from a bind mount.
+# secrets, never from a bind mount. Certs and every directory between the
+# mount root and the file must stay world-traversable: they are bind-mounted
+# and read by the non-root app uid (10001). Keys reach containers as root-only
+# 0400 secrets (compose ignores uid/gid/mode on Linux) and docker/entrypoint.sh
+# copies them to a world-readable /run/app-secrets before exec'ing the service.
+chmod 755 . .. clients
 chmod 600 *.key clients/*.key
 chmod 644 *.crt clients/*.crt
 chmod 600 "$CAKEY"
