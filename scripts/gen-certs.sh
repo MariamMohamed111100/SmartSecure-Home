@@ -60,6 +60,11 @@ for u in admin api simulators vision cyber engine; do issue_client "$u"; done
 
 # Private keys: owner-only on the host. Containers read them through Docker
 # secrets (mode 0444) or an entrypoint chown, never from a bind mount.
+# Certs and every directory between the mount root and the file must stay
+# world-traversable: the containers run as a non-root uid (app, 10001) and on
+# Linux a 0600 file or a non-executable directory makes load_cert_chain fail
+# with PermissionError (CI-only bug; Windows bind mounts hide it).
+chmod 755 . .. clients
 chmod 600 *.key clients/*.key
 chmod 644 *.crt clients/*.crt
 chmod 600 "$CAKEY"

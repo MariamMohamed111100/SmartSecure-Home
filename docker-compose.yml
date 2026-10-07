@@ -44,7 +44,11 @@ services:
       - ./infra/certs/mosquitto.crt:/mnt/certs/mosquitto.crt:ro
       - ./infra/certs/clients/admin.crt:/mnt/certs/admin.crt:ro
       - mosquitto_data:/mosquitto/data
-    secrets: [mosquitto_key, admin_key]
+    secrets:
+      - source: mosquitto_key
+        mode: 0444
+      - source: admin_key
+        mode: 0444
     restart: unless-stopped
 
   postgres:
@@ -84,7 +88,11 @@ services:
       - ./infra/certs/api.crt:/certs/api.crt:ro
       - ./infra/certs/clients/api.crt:/certs/clients/api.crt:ro
       - data:/data
-    secrets: [api_key, api_client_key]
+    secrets:
+      - source: api_key
+        mode: 0444
+      - source: api_client_key
+        mode: 0444
     depends_on:
       postgres: {condition: service_healthy}
       mosquitto: {condition: service_started}
@@ -99,7 +107,9 @@ services:
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/simulators.crt:/certs/clients/simulators.crt:ro
-    secrets: [sim_client_key]
+    secrets:
+      - source: sim_client_key
+        mode: 0444
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -112,7 +122,9 @@ services:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/vision.crt:/certs/clients/vision.crt:ro
       - data:/data            # snapshots written here; api + dashboard read them
-    secrets: [vision_client_key]
+    secrets:
+      - source: vision_client_key
+        mode: 0444
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -124,7 +136,9 @@ services:
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/cyber.crt:/certs/clients/cyber.crt:ro
-    secrets: [cyber_client_key]
+    secrets:
+      - source: cyber_client_key
+        mode: 0444
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -137,7 +151,9 @@ services:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/engine.crt:/certs/clients/engine.crt:ro
       - ./config:/config:ro
-    secrets: [engine_client_key]
+    secrets:
+      - source: engine_client_key
+        mode: 0444
     depends_on: [mosquitto]
     restart: unless-stopped
 
