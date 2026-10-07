@@ -35,7 +35,9 @@ docker compose exec mosquitto mosquitto_sub -h localhost -p 8883 --cafile /mosqu
 - **Mutual TLS MQTT** (`localhost:8883`, TLS 1.3 only): the broker requires a client
   certificate signed by the local CA; the CN is the MQTT username.
   **Every container mounts only its own client cert + CA certificate**, and private keys are
-  served as Docker secrets (`/run/secrets/`, mode 0444) — never through a bind mount. The
+  served as Docker secrets (`/run/secrets/`) — never through a bind mount. On Linux those are
+  root-only (mode 0400), so `docker/entrypoint.sh` copies each secret to a world-readable
+  `/run/app-secrets/` (chowned to the `app` user) before exec'ing the service as that user. The
   CA private key (`infra/ca/ca.key`) stays on the host, so a compromised service **cannot
   mint certificates** or impersonate another service, and per-service ACLs
   (`infra/mosquitto/acl.conf`) stop it reading/writing outside its lane. The smoke test

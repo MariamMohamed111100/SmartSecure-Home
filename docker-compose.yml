@@ -44,11 +44,7 @@ services:
       - ./infra/certs/mosquitto.crt:/mnt/certs/mosquitto.crt:ro
       - ./infra/certs/clients/admin.crt:/mnt/certs/admin.crt:ro
       - mosquitto_data:/mosquitto/data
-    secrets:
-      - source: mosquitto_key
-        mode: 0444
-      - source: admin_key
-        mode: 0444
+    secrets: [mosquitto_key, admin_key]
     restart: unless-stopped
 
   postgres:
@@ -67,14 +63,14 @@ services:
   api:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: api}}
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8443",
-              "--ssl-keyfile", "/run/secrets/api_key", "--ssl-certfile", "/certs/api.crt"]
+              "--ssl-keyfile", "/run/app-secrets/api_key", "--ssl-certfile", "/certs/api.crt"]
     ports: ["8443:8443"]            # HTTPS: https://localhost:8443/docs (dev only)
     environment:
       <<: *mqtt
       MQTT_USER: api
       MQTT_PASSWORD: ${MQTT_PASSWORD_API}
       MQTT_CLIENT_CERT: /certs/clients/api.crt
-      MQTT_CLIENT_KEY: /run/secrets/api_client_key
+      MQTT_CLIENT_KEY: /run/app-secrets/api_client_key
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
       JWT_ALGORITHM: ${JWT_ALGORITHM}
@@ -88,11 +84,7 @@ services:
       - ./infra/certs/api.crt:/certs/api.crt:ro
       - ./infra/certs/clients/api.crt:/certs/clients/api.crt:ro
       - data:/data
-    secrets:
-      - source: api_key
-        mode: 0444
-      - source: api_client_key
-        mode: 0444
+    secrets: [api_key, api_client_key]
     depends_on:
       postgres: {condition: service_healthy}
       mosquitto: {condition: service_started}
@@ -102,14 +94,12 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: simulators}}
     environment:
       {<<: *mqtt, MQTT_USER: simulators, MQTT_PASSWORD: "${MQTT_PASSWORD_SIMULATORS}",
-       MQTT_CLIENT_CERT: /certs/clients/simulators.crt, MQTT_CLIENT_KEY: /run/secrets/sim_client_key,
+       MQTT_CLIENT_CERT: /certs/clients/simulators.crt, MQTT_CLIENT_KEY: /run/app-secrets/sim_client_key,
        HAL_DRIVER: "${HAL_DRIVER:-sim}", SIM_ALLOW_INJECT: "${SIM_ALLOW_INJECT:-true}"}
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/simulators.crt:/certs/clients/simulators.crt:ro
-    secrets:
-      - source: sim_client_key
-        mode: 0444
+    secrets: [sim_client_key]
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -117,14 +107,12 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: vision}}
     environment:
       {<<: *mqtt, MQTT_USER: vision, MQTT_PASSWORD: "${MQTT_PASSWORD_VISION}",
-       MQTT_CLIENT_CERT: /certs/clients/vision.crt, MQTT_CLIENT_KEY: /run/secrets/vision_client_key}
+       MQTT_CLIENT_CERT: /certs/clients/vision.crt, MQTT_CLIENT_KEY: /run/app-secrets/vision_client_key}
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/vision.crt:/certs/clients/vision.crt:ro
       - data:/data            # snapshots written here; api + dashboard read them
-    secrets:
-      - source: vision_client_key
-        mode: 0444
+    secrets: [vision_client_key]
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -132,13 +120,11 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: cyber}}
     environment:
       {<<: *mqtt, MQTT_USER: cyber, MQTT_PASSWORD: "${MQTT_PASSWORD_CYBER}",
-       MQTT_CLIENT_CERT: /certs/clients/cyber.crt, MQTT_CLIENT_KEY: /run/secrets/cyber_client_key}
+       MQTT_CLIENT_CERT: /certs/clients/cyber.crt, MQTT_CLIENT_KEY: /run/app-secrets/cyber_client_key}
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/cyber.crt:/certs/clients/cyber.crt:ro
-    secrets:
-      - source: cyber_client_key
-        mode: 0444
+    secrets: [cyber_client_key]
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -146,14 +132,12 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: engine}}
     environment:
       {<<: *mqtt, MQTT_USER: engine, MQTT_PASSWORD: "${MQTT_PASSWORD_ENGINE}",
-       MQTT_CLIENT_CERT: /certs/clients/engine.crt, MQTT_CLIENT_KEY: /run/secrets/engine_client_key}
+       MQTT_CLIENT_CERT: /certs/clients/engine.crt, MQTT_CLIENT_KEY: /run/app-secrets/engine_client_key}
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/engine.crt:/certs/clients/engine.crt:ro
       - ./config:/config:ro
-    secrets:
-      - source: engine_client_key
-        mode: 0444
+    secrets: [engine_client_key]
     depends_on: [mosquitto]
     restart: unless-stopped
 
@@ -207,8 +191,10 @@ volumes:
   data:                     # shared snapshot/export volume: vision (write), api+frontend (read)
 
 secrets:
-  # Private keys never touch a mounted directory; Docker serves them as
-  # root-owned mode-0444 files in /run/secrets/, readable by any uid.
+  # Private keys never touch a mounted directory; Docker serves them in
+  # /run/secrets/. On Linux that is root-only (mode 0400, uid/gid/mode in the
+  # service block are ignored), so docker/entrypoint.sh copies them to
+  # /run/app-secrets (0444, chowned to app) before exec'ing the service as app.
   mosquitto_key: {file: ./infra/certs/mosquitto.key}
   admin_key: {file: ./infra/certs/clients/admin.key}
   api_key: {file: ./infra/certs/api.key}
