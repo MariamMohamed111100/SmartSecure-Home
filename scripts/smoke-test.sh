@@ -158,4 +158,23 @@ sys.exit(fails)
 PYEOF
 [ $? -eq 0 ] || fail=1
 
+echo ">> Simulators: every device must publish retained status..."
+STATUS=$(docker compose exec -T mosquitto mosquitto_sub -h localhost -p 8883 \
+  --cafile /mosquitto/config/certs/ca.crt $CERT -u admin -P "$MQTT_PASSWORD_ADMIN" \
+  -t 'home/+/+/+/status' -v -W 6 2>&1 || true)
+N=$(grep -c '^home/' <<<"$STATUS")
+if [ "$N" -ge 15 ]; then echo "  OK    $N device statuses"; else echo "  FAIL  only $N device statuses (need >= 15)"; fail=1; fi
+
+echo ">> Simulators: scenario water_leak must produce a contract event through mTLS..."
+EV=$(mktemp)
+docker compose exec -T mosquitto mosquitto_sub -h localhost -p 8883 \
+  --cafile /mosquitto/config/certs/ca.crt $CERT -u admin -P "$MQTT_PASSWORD_ADMIN" \
+  -t 'home/+/water_leak/+/event' -C 1 -W 20 >"$EV" 2>&1 &
+EV_PID=$!
+sleep 3
+docker compose exec -T simulators python scenario_runner.py water_leak >/dev/null 2>&1
+wait "$EV_PID" || true
+if grep -q '"type":"water.leak"' "$EV"; then echo "  OK    water.leak event received"; else echo "  FAIL  no water.leak event"; fail=1; fi
+rm -f "$EV"
+
 [ $fail -eq 0 ] && echo ">> Smoke test PASSED" || { echo ">> Smoke test FAILED"; exit 1; }

@@ -94,7 +94,8 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: simulators}}
     environment:
       {<<: *mqtt, MQTT_USER: simulators, MQTT_PASSWORD: "${MQTT_PASSWORD_SIMULATORS}",
-       MQTT_CLIENT_CERT: /certs/clients/simulators.crt, MQTT_CLIENT_KEY: /run/secrets/sim_client_key}
+       MQTT_CLIENT_CERT: /certs/clients/simulators.crt, MQTT_CLIENT_KEY: /run/secrets/sim_client_key,
+       HAL_DRIVER: "${HAL_DRIVER:-sim}", SIM_ALLOW_INJECT: "${SIM_ALLOW_INJECT:-true}"}
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/simulators.crt:/certs/clients/simulators.crt:ro

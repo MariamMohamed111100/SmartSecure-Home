@@ -38,3 +38,6 @@ RISK = "security/risk"
 INCIDENTS = "security/incidents"
 # One-way command channel: engine @P1/P6 instructs cyber to drop an IP.
 BLOCK = "system/block"
+# Simulation only: the scenario runner asks the simulators to make something "happen".
+# Never subscribed to on real hardware (SIM_ALLOW_INJECT=false).
+SIM_INJECT = "system/sim/inject"

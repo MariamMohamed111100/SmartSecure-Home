@@ -17,12 +17,23 @@ approved by Person 1 and the owners of the affected modules. Code lives in
 | Risk state | `security/risk` | engine | api | 1 | yes |
 | Incident | `security/incidents` | engine | api | 1 | no |
 | IP block command | `system/block` | engine | cyber | 1 | no |
+| Simulation inject | `system/sim/inject` | scenario runner | simulators | 1 | no |
 | Service heartbeat | `system/heartbeat/<service>` | every service (5 s) | admin | 0 | no |
 
 Topic tokens are lowercase `a-z 0-9 _` only. Zones are listed in `config/zones.yaml`
 (`outdoor_zones` marks outdoor areas, which emit `motion.outdoor` instead of `motion.night`).
 Per-service permissions are enforced by `infra/mosquitto/acl.conf`, so a compromised service
 cannot publish outside its lane. **New topic = update the ACL and this table in the same PR.**
+
+`system/sim/inject` (simulation only, disabled on real hardware with `SIM_ALLOW_INJECT=false`):
+`{"device": "pir_garage", "event": "motion", "data": {}}`. Sensors never receive `.../cmd`;
+scenarios only describe what happens in the house, the engine decides how to respond.
+
+Normal temperature readings are **not** events: they arrive as retained `.../status` updates
+(`state.temperature_c`, about every 10 s). Only crossing `threshold_c` emits `temperature.abnormal`,
+once per crossing. Devices are marked `online:false` on a clean shutdown; after a crash the missing
+`system/heartbeat/simulators` is the signal (the simulators share one MQTT connection, so a
+per-device LWT is not possible).
 
 `system/block` payload (engine→cyber, one-way command channel):
 
@@ -66,6 +77,7 @@ Snapshots referenced in `data.snapshot` are relative to the shared `data` volume
 | `valve.closed` | simulators | `valve_id` | 15 |
 | `lock.login_failed` | simulators | `lock_id`, `attempts` | 30 |
 | `camera.disconnected` | simulators/vision | `camera_id` | 35 |
+| `window.open` | simulators | `window_id` | not scored |
 | `smoke.detected` | simulators/vision | `sensor_id` | 100 |
 | `gas.detected` | simulators | `sensor_id`, `ppm` | 80 |
 | `water.leak` | simulators | `sensor_id` | engine rule |
