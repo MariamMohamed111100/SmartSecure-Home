@@ -46,7 +46,7 @@ class SimulatorRuntime:
             if isinstance(dev, Sensor):
                 try:
                     self._publish_emits(dev, dev.poll())
-                    if dev.state() != self._published_state.get(dev.id):
+                    if dev.state() != self._published_state.get(dev.id) or dev.was_sampled():
                         self._publish_status(dev)
                 except Exception:
                     log.exception("poll failed for %s", dev.id)

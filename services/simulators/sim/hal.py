@@ -73,6 +73,10 @@ class Sensor(Device, ABC):
     def poll(self) -> list[Emit]:
         """Called every tick. Return the events that happened since the last call."""
 
+    def was_sampled(self) -> bool:
+        """True when poll() just took a periodic reading (e.g. a temperature sample)."""
+        return False
+
 
 class Actuator(Device, ABC):
     def apply(self, action: str) -> list[Emit]:
@@ -98,19 +102,25 @@ class SimSensor(Sensor):
         self._rng = rng or random.Random()
         self._temp_interval = temp_interval
         self._next_temp = self.now() + temp_interval
+        self._sampled_this_poll = False
 
     def poll(self) -> list[Emit]:
         emits: list[Emit] = []
+        self._sampled_this_poll = False
         now = self.now()
         if self.kind == "pir" and self._state["motion"] and now >= self.hold_until:
             self.stimulate("still")                       # motion flag clears by itself
         if self.kind == "temperature" and now >= self._next_temp:
             self._next_temp = now + self._temp_interval
+            self._sampled_this_poll = True
             base = float(self.options.get("base_c", 22.0))
             value = self.pinned if self.pinned is not None else base + self._rng.uniform(-0.4, 0.4)
             patch, emits = catalog.temperature_update(self, value)
             self._state.update(patch)
         return emits
+
+    def was_sampled(self) -> bool:
+        return self._sampled_this_poll
 
 
 class SimActuator(Actuator):
