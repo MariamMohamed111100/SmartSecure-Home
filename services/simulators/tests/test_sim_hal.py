@@ -1,6 +1,7 @@
 import random
 
 import pytest
+
 from sim.devices import build_devices
 from sim.hal import SimActuator, SimSensor
 

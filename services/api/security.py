@@ -2,8 +2,8 @@
 
 Users are provisioned through the API_USERS environment variable
 (``name:password,name:password``), so the dev stack needs no user database.
-Person 2 can replace verify_user() with the real store without touching
-token handling.
+Replace verify_user() with a real user store (hashed passwords, roles) without touching
+the token handling.
 """
 from __future__ import annotations
 
@@ -35,6 +35,17 @@ def create_token(subject: str) -> str:
     return jwt.encode(payload, secret, algorithm=algorithm)
 
 
+def decode_token(token: str) -> dict:
+    """Return the claims or raise ValueError (used by the WebSocket, which has no Request)."""
+    secret, algorithm, _ = _settings()
+    try:
+        return jwt.decode(token, secret, algorithms=[algorithm])
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Token expired") from None
+    except jwt.InvalidTokenError:
+        raise ValueError("Invalid token") from None
+
+
 def verify_user(name: str, password: str) -> bool:
     wanted = None
     for pair in os.getenv("API_USERS", "").split(","):
@@ -43,9 +54,9 @@ def verify_user(name: str, password: str) -> bool:
         user, secret = pair.split(":", 1)
         if user.strip() == name:
             wanted = secret
-    # Constant-time compare to avoid timing side channels on password length.
     if wanted is None:
         return False
+    # Constant-time compare to avoid timing side channels on password length.
     return hmac.compare_digest(wanted.encode(), password.encode())
 
 
@@ -56,17 +67,12 @@ def require_token(
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "Missing bearer token", headers=_UNAUTHORIZED
         )
-    secret, algorithm, _ = _settings()
     try:
-        return jwt.decode(credentials.credentials, secret, algorithms=[algorithm])
-    except jwt.ExpiredSignatureError:
+        return decode_token(credentials.credentials)
+    except ValueError as exc:
         raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "Token expired", headers=_UNAUTHORIZED
+            status.HTTP_401_UNAUTHORIZED, str(exc), headers=_UNAUTHORIZED
         ) from None
-    except jwt.InvalidTokenError as exc:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "Invalid token", headers=_UNAUTHORIZED
-        ) from exc
 
 
 class LoginRateLimiter:

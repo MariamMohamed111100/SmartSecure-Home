@@ -1,5 +1,6 @@
 import pytest
 from pydantic import ValidationError
+
 from smartsecure_common import make_event, topics
 
 

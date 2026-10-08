@@ -15,3 +15,13 @@ data/
 *.egg-info/
 .ruff_cache/
 **/.pytest_cache/
+
+# CA private key and any stray key material must never reach the build context
+infra/ca/
+*.key
+*.pem
+
+# Not needed inside images (keeps them small, avoids shipping test code and fixtures)
+**/tests/
+**/*.db
+docs/

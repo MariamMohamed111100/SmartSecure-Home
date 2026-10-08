@@ -84,6 +84,7 @@ services:
       - ./infra/certs/api.crt:/certs/api.crt:ro
       - ./infra/certs/clients/api.crt:/certs/clients/api.crt:ro
       - data:/data
+      - ./config:/config:ro     # zones.yaml seeds the zones table
     secrets: [api_key, api_client_key]
     depends_on:
       postgres: {condition: service_healthy}

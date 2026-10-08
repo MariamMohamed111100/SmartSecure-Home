@@ -1,6 +1,7 @@
 """AES-256-GCM round-trip, tamper detection and key derivation."""
 import pytest
 from cryptography.exceptions import InvalidTag
+
 from smartsecure_common.crypto import decrypt, encrypt, key_from_env
 
 
