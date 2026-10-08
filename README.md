@@ -40,6 +40,7 @@ make up && make smoke                       # stack up and verified
 make watch                                  # terminal 2: live device events (MQTT)
 make ws                                     # terminal 3: what the dashboard receives (WebSocket)
 make sim S=night_intruder                   # terminal 1: something happens in the house
+make demo-incident                          # the proposal's full garage-intruder incident, checked end to end
 ```
 
 Use the API (replace the password with the one in your `.env`, `API_USERS=admin:<password>`):
