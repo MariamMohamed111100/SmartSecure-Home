@@ -181,6 +181,7 @@ are stored automatically), publish `security/risk` / `security/incidents`, read 
 | Existing database lacks new indexes or tables | tables were created by an older version | the API adds missing tables and indexes on startup; `make clean` for a fresh start |
 | `Permission denied` / `bad interpreter` running scripts (Windows) | line endings or lost exec bit | use Git Bash; `chmod +x scripts/*.sh`; the repo enforces LF via `.gitattributes` |
 | Port 8080 or 8443 already in use | another program | set `DASHBOARD_PORT` in `.env`; stop the other program for 8443 |
+| Dashboard shows "WebSocket 403" | bad/expired token, or `/ws/` not proxying the original path | reconnect (auto-reconnect is on Person 7); check `docker compose exec frontend nginx -T \| grep proxy_pass` shows `https://$api:8443;` (no trailing `/ws/`) in `location /ws/` |
 
 ## Known limitations (be honest in the demo)
 

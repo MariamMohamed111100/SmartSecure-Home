@@ -247,11 +247,13 @@ else
   echo "  FAIL  /api/health through nginx: $PROXY"; fail=1
 fi
 
-echo ">> WebSocket via nginx: dashboard feed (ws://frontend/ws/events)..."
-WSB=$(mktemp)
+echo ">> WebSocket via nginx: full loop (scenario -> broker -> API -> WS -> client)..."
+WSB=$(mktemp); WSO=$(mktemp)
 cat >"$WSB" <<'PY'
 import json as _json
 import os
+import sys
+import time
 import urllib.request
 
 user, _, password = os.environ["API_USERS"].split(",")[0].partition(":")
@@ -265,17 +267,30 @@ with urllib.request.urlopen(req, timeout=10) as r:
 
 from websockets.sync.client import connect
 
+t0 = time.time()
+loops = 0
 with connect("ws://frontend:80/ws/events?token=" + token, open_timeout=10) as ws:
-    msg = _json.loads(ws.recv(timeout=25))
-    print("KIND=" + msg.get("kind", "?"))
+    while time.time() - t0 < 30:
+        msg = _json.loads(ws.recv(timeout=30))
+        loops += 1
+        if msg.get("kind") == "event" and msg.get("data", {}).get("type") == "water.leak":
+            print("KIND=event TYPE=water.leak t=%.0fs (frames=%d)" %
+                  (time.time() - t0, loops), flush=True)
+            sys.exit(0)
+print("TIMEOUT no water.leak event over WS (frames=%d)" % loops, file=sys.stderr)
+sys.exit(1)
 PY
-WS=$(docker compose exec -T api python - <"$WSB" 2>&1 || true)
+docker compose exec -T api python - <"$WSB" >"$WSO" 2>&1 &
+WSPID=$!
+sleep 3
+docker compose exec -T simulators python scenario_runner.py water_leak >/dev/null 2>&1
+wait "$WSPID" || true
 rm -f "$WSB"
-if grep -q "KIND=event" <<<"$WS" || grep -q "KIND=device_status" <<<"$WS"; then
-  KIND=$(grep -o 'KIND=[a-z_]*' <<<"$WS")
-  echo "  OK    WebSocket $KIND received through nginx"
+if grep -q "KIND=event TYPE=water.leak" "$WSO"; then
+  echo "  OK    water.leak event received over WebSocket via nginx"
 else
-  echo "  FAIL  no WebSocket message through nginx: $WS"; fail=1
+  echo "  FAIL  no water.leak event over WebSocket via nginx: $(tr '\n' ' ' < "$WSO")"; fail=1
 fi
+rm -f "$WSO"
 
 [ $fail -eq 0 ] && echo ">> Smoke test PASSED" || { echo ">> Smoke test FAILED"; exit 1; }
