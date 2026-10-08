@@ -20,6 +20,7 @@ from fastapi import (
     Query,
     Request,
     WebSocket,
+    WebSocketDisconnect,
     status,
 )
 from pydantic import BaseModel, Field
@@ -61,30 +62,28 @@ def _ts_param(name: str, value: datetime | None) -> datetime | None:
 
 
 # ------------------------------------------------------------------ WebSocket
-_WS_EXPIRY_POLL_SECONDS = 5
+MAX_WS_CLIENTS = int(os.getenv("WS_MAX_CLIENTS", "100"))
 
 
-async def _wait_for_text(websocket: WebSocket) -> None:
-    """Consume client frames; the task ends when the client disconnects."""
-    while True:
-        await websocket.receive_text()
+async def _close_when_token_expires(websocket: WebSocket, expires_at: float) -> None:
+    """Close the socket with 1008 the moment the JWT's ``exp`` passes.
 
-
-async def _wait_until(expires_at: float) -> None:
-    """Return once the token's ``exp`` has passed."""
-    while True:
-        await asyncio.sleep(_WS_EXPIRY_POLL_SECONDS)
-        if time.time() > expires_at:
-            return
+    The token is only checked at connect time, but the socket can outlive it by hours, so a
+    user who logged out (or lost access) would keep receiving events. The dashboard must
+    re-login and reconnect with the NEW token.
+    """
+    await asyncio.sleep(max(0.0, expires_at - time.time()))
+    manager.disconnect(websocket)              # stop broadcasting to it first
+    try:
+        await websocket.close(code=1008)
+    except Exception:                          # the client may already be gone
+        logger.debug("socket already closed when its token expired")
 
 
 @ws_router.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket):
     """Live feed. Authenticate with ``?token=<JWT>`` (browsers cannot set WS headers).
-    The reverse proxy does not access-log /ws/ so the token never lands in a log file.
-    A connection outlives its JWT otherwise: the token is checked at connect time and
-    can live 60 minutes while the socket may stay open for hours, so once ``exp`` passes
-    the server closes the socket (1008) and the dashboard must re-login and reconnect."""
+    The reverse proxy does not access-log /ws/ so the token never lands in a log file."""
     token = websocket.query_params.get("token")
     if not token:
         await websocket.close(code=1008)
@@ -94,29 +93,23 @@ async def websocket_events(websocket: WebSocket):
     except ValueError:
         await websocket.close(code=1008)
         return
-    expires_at = int(claims["exp"])
+    if len(manager.connections) >= MAX_WS_CLIENTS:
+        await websocket.close(code=1013)       # "try again later"
+        return
 
     await manager.connect(websocket)
-    # A reader task and an expiry-watcher task race: whichever finishes first wins.
-    # Only a clean winner-close is performed; the loser is cancelled, so a receive
-    # is never interrupted mid-flight by a timeout (stale ASGI state).
-    reader = asyncio.create_task(_wait_for_text(websocket))
-    guard = asyncio.create_task(_wait_until(expires_at))
+    # The read loop stays as simple as possible and is never cancelled mid-receive;
+    # a separate timer task closes the socket at token expiry, which ends the loop.
+    guard = asyncio.create_task(_close_when_token_expires(websocket, int(claims["exp"])))
     try:
-        done, pending = await asyncio.wait(
-            {reader, guard}, return_when=asyncio.FIRST_COMPLETED
-        )
-        if guard in done:
-            await websocket.close(code=1008)
-        for task in pending:
-            task.cancel()
-        await asyncio.gather(*done, *pending, return_exceptions=True)
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
     except Exception:
         logger.exception("websocket error")
     finally:
-        for task in (reader, guard):
-            task.cancel()
-        await asyncio.gather(reader, guard, return_exceptions=True)
+        guard.cancel()
         manager.disconnect(websocket)
 
 
