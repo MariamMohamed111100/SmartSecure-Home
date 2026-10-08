@@ -1,4 +1,5 @@
 import json
+import time
 
 import jwt
 import pytest
@@ -21,6 +22,15 @@ def test_websocket_rejects_expired_token(client):
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/ws/events?token=" + _expired()):
             pass
+
+
+def test_websocket_closes_1008_once_the_token_expires(client):
+    short = jwt.encode({"sub": "admin", "exp": int(time.time()) + 2}, "j" * 48, algorithm="HS256")
+    with client.websocket_connect("/ws/events?token=" + short) as ws:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            while True:
+                ws.receive_text()
+        assert exc_info.value.code == 1008
 
 
 def _token(auth):

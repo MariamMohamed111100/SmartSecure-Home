@@ -174,6 +174,17 @@ payload sits in `data`. `event` frames carry the event envelope in `data` (`id`,
 device_type, zone, online, state, status_id, ts}`. Dashboards must switch on `kind` only and read the
 payload from `data`.
 
+Example — event frame (`frame.data` is the event envelope, and `frame.data.data` is the per-type payload):
+
+```json
+{"kind": "event", "data": {"id": "...", "ts": "...", "source": "...", "type": "door.open",
+                           "zone": "garage", "severity_hint": "low", "data": {"door_id": "door_garage"}}}
+```
+
+The token is checked at connect time **and** for its lifetime: when the JWT `exp` passes, the API
+closes the socket with close code **1008** and the dashboard must re-login and reconnect (do not
+reconnect with the old token).
+
 Events and incidents are **read-only over REST on purpose**: they only enter through MQTT, where
 every message is validated first (event envelope, topic/zone match, size limits). A malformed
 message is logged and dropped, never stored.
