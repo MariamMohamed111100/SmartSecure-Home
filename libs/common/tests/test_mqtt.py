@@ -2,6 +2,7 @@ import socket
 from pathlib import Path
 
 import pytest
+
 from smartsecure_common.mqtt import connect
 
 TEST_CA = Path(__file__).parent / "data" / "test_ca.crt"

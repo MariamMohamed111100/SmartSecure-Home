@@ -1,4 +1,13 @@
 line-length = 100
 target-version = "py312"
+
 [lint]
 select = ["E", "F", "I", "B"]
+
+[lint.isort]
+# service modules are imported as top-level names (each service runs from its own folder)
+known-first-party = [
+  "smartsecure_common", "sim",
+  "database", "models", "routes", "security", "storage", "audit",
+  "mqtt_handler", "websocket_manager", "zones_seed",
+]

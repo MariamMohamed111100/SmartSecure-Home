@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import yaml
+
 from smartsecure_common import topics
 
 from . import catalog

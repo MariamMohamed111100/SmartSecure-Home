@@ -177,4 +177,62 @@ wait "$EV_PID" || true
 if grep -q '"type":"water.leak"' "$EV"; then echo "  OK    water.leak event received"; else echo "  FAIL  no water.leak event"; fail=1; fi
 rm -f "$EV"
 
+echo ">> API pipeline: simulators -> mTLS broker -> API -> Postgres -> REST..."
+$PY - <<'PYEOF' "${API_USERS#admin:}"
+import json
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+
+base = "https://localhost:8443"
+ctx = ssl.create_default_context(cafile="infra/certs/ca.crt")
+
+
+def call(method, path, body=None, token=None):
+    headers = {"Content-Type": "application/json"} if body is not None else {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(base + path, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+            return r.status, json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as e:
+        return e.code, None
+
+
+def wait_for(name, check, timeout):
+    end = time.time() + timeout
+    while time.time() < end:
+        if check():
+            print(f"  OK    {name}")
+            return 0
+        time.sleep(1)
+    print(f"  FAIL  {name} (not true after {timeout}s)")
+    return 1
+
+
+fails = 0
+status, body = call("POST", "/auth/login", {"username": "admin", "password": sys.argv[1]})
+token = body["access_token"] if status == 200 else ""
+for path in ("/devices", "/events", "/incidents", "/audit"):
+    code = call("GET", path)[0]
+    if code == 401:
+        print(f"  OK    anonymous GET {path} -> 401")
+    else:
+        print(f"  FAIL  anonymous GET {path} -> {code}")
+        fails += 1
+fails += wait_for("devices registered from simulator status (>= 15)",
+                  lambda: len(call("GET", "/devices", token=token)[1] or []) >= 15, 30)
+fails += wait_for("water.leak event stored and readable via REST (integrity ok)",
+                  lambda: any(e["integrity_ok"] for e in
+                              (call("GET", "/events?type=water.leak&limit=5", token=token)[1] or [])), 20)
+fails += wait_for("zones seeded from config/zones.yaml (7)",
+                  lambda: len(call("GET", "/zones", token=token)[1] or []) == 7, 10)
+sys.exit(fails)
+PYEOF
+[ $? -eq 0 ] || fail=1
+
 [ $fail -eq 0 ] && echo ">> Smoke test PASSED" || { echo ">> Smoke test FAILED"; exit 1; }

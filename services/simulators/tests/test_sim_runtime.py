@@ -1,6 +1,7 @@
 import json
 
 import jsonschema
+
 from smartsecure_common import topics
 
 

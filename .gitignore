@@ -15,3 +15,37 @@ node_modules/
 .vscode/
 # runtime snapshot/export mount; NOT libs/common/tests/data
 /data/
+
+# --- secrets and keys (belt and braces: certs normally live in infra/certs and infra/ca)
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.csr
+*.srl
+
+# --- local databases, logs and runtime output
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# --- Python tooling
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.tox/
+build/
+dist/
+
+# --- editors / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# --- personal data: never commit face photos for recognition (vision module)
+known_faces/
