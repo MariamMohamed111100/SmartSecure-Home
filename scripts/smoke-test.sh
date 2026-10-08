@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Passes only if: every service heartbeats through the TLS broker, the broker
 # rejects cert-less clients (mTLS) and cross-service ACL reads (least
-# privilege), and the API enforces JWT (contract section 5).
+# privilege), the API enforces JWT (contract section 5), and the frontend
+# nginx proxy serves REST (/api/*) and WebSocket (/ws/*) on the dashboard
+# origin (http://localhost:8080).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 # Windows (Git Bash/MSYS): disable argument path conversion. Without this, MSYS
@@ -234,5 +236,46 @@ fails += wait_for("zones seeded from config/zones.yaml (7)",
 sys.exit(fails)
 PYEOF
 [ $? -eq 0 ] || fail=1
+
+echo ">> Frontend proxy: dashboard origin (8080) -> API /api/health..."
+PROXY=$(curl -s -m 10 http://localhost:8080/api/health 2>&1 || true)
+if printf '%s' "$PROXY" | grep -q '"status":"ok"' \
+   && printf '%s' "$PROXY" | grep -q '"mqtt_connected":true' \
+   && printf '%s' "$PROXY" | grep -q '"db":true'; then
+  echo "  OK    GET /api/health through nginx (status/mqtt/db all true)"
+else
+  echo "  FAIL  /api/health through nginx: $PROXY"; fail=1
+fi
+
+echo ">> WebSocket via nginx: dashboard feed (ws://frontend/ws/events)..."
+WSB=$(mktemp)
+cat >"$WSB" <<'PY'
+import json as _json
+import os
+import urllib.request
+
+user, _, password = os.environ["API_USERS"].split(",")[0].partition(":")
+req = urllib.request.Request(
+    "http://frontend:80/api/auth/login",
+    data=_json.dumps({"username": user, "password": password}).encode(),
+    headers={"Content-Type": "application/json"},
+)
+with urllib.request.urlopen(req, timeout=10) as r:
+    token = _json.load(r)["access_token"]
+
+from websockets.sync.client import connect
+
+with connect("ws://frontend:80/ws/events?token=" + token, open_timeout=10) as ws:
+    msg = _json.loads(ws.recv(timeout=25))
+    print("KIND=" + msg.get("kind", "?"))
+PY
+WS=$(docker compose exec -T api python - <"$WSB" 2>&1 || true)
+rm -f "$WSB"
+if grep -q "KIND=event" <<<"$WS" || grep -q "KIND=device_status" <<<"$WS"; then
+  KIND=$(grep -o 'KIND=[a-z_]*' <<<"$WS")
+  echo "  OK    WebSocket $KIND received through nginx"
+else
+  echo "  FAIL  no WebSocket message through nginx: $WS"; fail=1
+fi
 
 [ $fail -eq 0 ] && echo ">> Smoke test PASSED" || { echo ">> Smoke test FAILED"; exit 1; }
