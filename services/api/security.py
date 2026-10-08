@@ -39,7 +39,9 @@ def decode_token(token: str) -> dict:
     """Return the claims or raise ValueError (used by the WebSocket, which has no Request)."""
     secret, algorithm, _ = _settings()
     try:
-        return jwt.decode(token, secret, algorithms=[algorithm])
+        return jwt.decode(
+            token, secret, algorithms=[algorithm], options={"require": ["exp", "sub"]}
+        )
     except jwt.ExpiredSignatureError:
         raise ValueError("Token expired") from None
     except jwt.InvalidTokenError:

@@ -181,6 +181,17 @@ Example — event frame (`frame.data` is the event envelope, and `frame.data.dat
                            "zone": "garage", "severity_hint": "low", "data": {"door_id": "door_garage"}}}
 ```
 
+WebSocket close codes the dashboard must handle:
+
+| Code | Meaning | What the client does |
+|---|---|---|
+| `1008` | missing/invalid token, **or the JWT expired while connected** | log in again, then reconnect with the NEW token |
+| `1013` | server is full (`WS_MAX_CLIENTS`, default 100) | wait with backoff, retry |
+| `1011` | the client could not keep up and was dropped | reconnect and reload state from REST |
+
+Tokens must carry `exp` and `sub`. Each send to a client has a 2 s timeout, so one stalled client
+never delays the others. See `docs/FRONTEND_HANDOVER.md` for exact frame examples.
+
 The token is checked at connect time **and** for its lifetime: when the JWT `exp` passes, the API
 closes the socket with close code **1008** and the dashboard must re-login and reconnect (do not
 reconnect with the old token).
