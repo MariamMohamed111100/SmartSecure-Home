@@ -20,7 +20,6 @@ from fastapi import (
     Query,
     Request,
     WebSocket,
-    WebSocketDisconnect,
     status,
 )
 from pydantic import BaseModel, Field
@@ -65,6 +64,20 @@ def _ts_param(name: str, value: datetime | None) -> datetime | None:
 _WS_EXPIRY_POLL_SECONDS = 5
 
 
+async def _wait_for_text(websocket: WebSocket) -> None:
+    """Consume client frames; the task ends when the client disconnects."""
+    while True:
+        await websocket.receive_text()
+
+
+async def _wait_until(expires_at: float) -> None:
+    """Return once the token's ``exp`` has passed."""
+    while True:
+        await asyncio.sleep(_WS_EXPIRY_POLL_SECONDS)
+        if time.time() > expires_at:
+            return
+
+
 @ws_router.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket):
     """Live feed. Authenticate with ``?token=<JWT>`` (browsers cannot set WS headers).
@@ -84,20 +97,26 @@ async def websocket_events(websocket: WebSocket):
     expires_at = int(claims["exp"])
 
     await manager.connect(websocket)
+    # A reader task and an expiry-watcher task race: whichever finishes first wins.
+    # Only a clean winner-close is performed; the loser is cancelled, so a receive
+    # is never interrupted mid-flight by a timeout (stale ASGI state).
+    reader = asyncio.create_task(_wait_for_text(websocket))
+    guard = asyncio.create_task(_wait_until(expires_at))
     try:
-        while True:
-            if time.time() > expires_at:
-                await websocket.close(code=1008)
-                return
-            try:
-                await asyncio.wait_for(websocket.receive_text(), timeout=_WS_EXPIRY_POLL_SECONDS)
-            except asyncio.TimeoutError:
-                continue
-    except WebSocketDisconnect:
-        pass
+        done, pending = await asyncio.wait(
+            {reader, guard}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if guard in done:
+            await websocket.close(code=1008)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*done, *pending, return_exceptions=True)
     except Exception:
         logger.exception("websocket error")
     finally:
+        for task in (reader, guard):
+            task.cancel()
+        await asyncio.gather(reader, guard, return_exceptions=True)
         manager.disconnect(websocket)
 
 

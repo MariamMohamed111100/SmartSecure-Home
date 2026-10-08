@@ -25,12 +25,18 @@ def test_websocket_rejects_expired_token(client):
 
 
 def test_websocket_closes_1008_once_the_token_expires(client):
+    from websocket_manager import manager
+
     short = jwt.encode({"sub": "admin", "exp": int(time.time()) + 2}, "j" * 48, algorithm="HS256")
     with client.websocket_connect("/ws/events?token=" + short) as ws:
         with pytest.raises(WebSocketDisconnect) as exc_info:
             while True:
                 ws.receive_text()
         assert exc_info.value.code == 1008
+        deadline = time.time() + 5
+        while manager.connections and time.time() < deadline:
+            time.sleep(0.1)
+        assert len(manager.connections) == 0, "expired connection must be dropped from the manager"
 
 
 def _token(auth):
