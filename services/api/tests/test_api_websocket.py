@@ -34,7 +34,7 @@ def test_live_event_and_status_are_pushed(client, auth, feed):
         assert message["kind"] == "event" and message["data"]["id"] == "live-event-01"
         feed("home/kitchen/valve/valve_main/status", {"online": True, "state": {"open": False}})
         message = json.loads(ws.receive_text())
-        assert message["kind"] == "device_status" and message["state"] == {"open": False}
+        assert message["kind"] == "device_status" and message["data"]["state"] == {"open": False}
 
 
 def test_rejected_messages_are_not_broadcast(client, auth, feed):

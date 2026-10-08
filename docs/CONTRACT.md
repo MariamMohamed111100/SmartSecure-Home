@@ -166,7 +166,13 @@ API (`https://localhost:8443/docs`) and only while `API_DOCS_ENABLED=true`.
 | `GET /incidents/{id}/events` | the incident's events in chronological order (timeline replay) |
 | `GET /risk` | latest risk snapshot per zone |
 | `GET /audit` | who logged in / sent which command (`limit`, `offset`) |
-| `WS /ws/events?token=<JWT>` | live push: `{kind: event | device_status | risk | incident, ...}` |
+| `WS /ws/events?token=<JWT>` | live push, every frame is `{"kind": "event"/"device_status"/"risk"/"incident", "data": {...}}` (uniform envelope) |
+
+Every WebSocket frame uses the **same envelope** `{kind, data}`: the `kind` is a discriminant and the
+payload sits in `data`. `event` frames carry the event envelope in `data` (`id`, `ts`, `source`,
+`type`, `zone`, `severity_hint`, `data`); `device_status` frames carry `data` with `{device_id,
+device_type, zone, online, state, status_id, ts}`. Dashboards must switch on `kind` only and read the
+payload from `data`.
 
 Events and incidents are **read-only over REST on purpose**: they only enter through MQTT, where
 every message is validated first (event envelope, topic/zone match, size limits). A malformed

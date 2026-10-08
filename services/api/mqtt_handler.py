@@ -156,9 +156,12 @@ def _save_status(zone: str, device_type: str, device_id: str, payload: dict) -> 
         logger.exception("failed to save status of %s", device_id)
         return
     _broadcast({
-        "kind": "device_status", "device_id": device_id, "device_type": device_type,
-        "zone": zone, "online": status.online, "state": status.state,
-        "status_id": payload.get("id"), "ts": payload.get("ts"),
+        "kind": "device_status",
+        "data": {
+            "device_id": device_id, "device_type": device_type,
+            "zone": zone, "online": status.online, "state": status.state,
+            "status_id": payload.get("id"), "ts": payload.get("ts"),
+        },
     })
 
 
