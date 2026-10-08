@@ -5,9 +5,11 @@ protected by default. Events and incidents are write-protected over REST on purp
 enter the system through MQTT (validated in mqtt_handler), so a logged-in user cannot forge
 forensic history.
 """
+import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
@@ -60,24 +62,37 @@ def _ts_param(name: str, value: datetime | None) -> datetime | None:
 
 
 # ------------------------------------------------------------------ WebSocket
+_WS_EXPIRY_POLL_SECONDS = 5
+
+
 @ws_router.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket):
     """Live feed. Authenticate with ``?token=<JWT>`` (browsers cannot set WS headers).
-    The reverse proxy does not access-log /ws/ so the token never lands in a log file."""
+    The reverse proxy does not access-log /ws/ so the token never lands in a log file.
+    A connection outlives its JWT otherwise: the token is checked at connect time and
+    can live 60 minutes while the socket may stay open for hours, so once ``exp`` passes
+    the server closes the socket (1008) and the dashboard must re-login and reconnect."""
     token = websocket.query_params.get("token")
     if not token:
         await websocket.close(code=1008)
         return
     try:
-        decode_token(token)
+        claims = decode_token(token)
     except ValueError:
         await websocket.close(code=1008)
         return
+    expires_at = int(claims["exp"])
 
     await manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()
+            if time.time() > expires_at:
+                await websocket.close(code=1008)
+                return
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=_WS_EXPIRY_POLL_SECONDS)
+            except asyncio.TimeoutError:
+                continue
     except WebSocketDisconnect:
         pass
     except Exception:
