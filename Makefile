@@ -1,4 +1,4 @@
-.PHONY: setup up down logs ps smoke test lint clean sim-list sim watch ws
+.PHONY: demo-incident setup up down logs ps smoke test lint clean sim-list sim watch ws
 
 setup:        ## Generate .env secrets, TLS certs, MQTT users (safe to re-run)
 	./scripts/setup.sh
@@ -40,6 +40,9 @@ watch:        ## Live-print events:  make watch  (or T='home/#' for everything)
 
 ws:           ## Live dashboard feed in the terminal (logs in with .env credentials)
 	python scripts/ws_listen.py
+
+demo-incident: ## Play the proposal's garage-intruder incident end to end (checks the API afterwards)
+	python scripts/demo_incident.py
 
 clean:        ## Stop and delete volumes (DB data is lost)
 	docker compose down -v
