@@ -51,9 +51,12 @@ class Settings:
     motion_area: float = field(default_factory=lambda: _f("MOTION_MIN_AREA", 0.01))
     # A fire model trained on a small dataset is noisy: stricter floors, and smoke from the model
     # is OFF by default because `smoke.detected` scores 100 (it would trigger the siren).
-    fire_min_conf: float = field(default_factory=lambda: _f("FIRE_MIN_CONF", 0.55))
+    fire_min_conf: float = field(default_factory=lambda: _f("FIRE_MIN_CONF", 0.5))
     smoke_min_conf: float = field(default_factory=lambda: _f("SMOKE_MIN_CONF", 0.8))
     smoke_from_model: bool = field(default_factory=lambda: _b("SMOKE_FROM_MODEL", False))
+    fire_min_motion: float = field(default_factory=lambda: _f("FIRE_MIN_MOTION", 0.25))
+    package_min_conf: float = field(default_factory=lambda: _f("PACKAGE_MIN_CONF", 0.5))
+    package_size: int = field(default_factory=lambda: int(_f("PACKAGE_IMGSZ", 640)))
     fire_size: int = field(default_factory=lambda: int(_f("FIRE_IMGSZ", 640)))
     fire_heuristic: bool = field(default_factory=lambda: _b("FIRE_HEURISTIC", False))
     # seconds before the same kind of alert may be sent again

@@ -5,8 +5,9 @@ YOLO runs through OpenCV's DNN module on an ONNX export, so the image needs no P
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -69,6 +70,43 @@ def _clip(b: list[int], w: int, h: int) -> tuple[int, int, int, int]:
     return x, y, max(1, min(b[2], w - x)), max(1, min(b[3], h - y))
 
 
+class MotionGated:
+    """Wraps a detector: boxes of the gated kinds must be *moving* inside, or they are dropped.
+
+    Flames flicker, a static orange parcel does not. On the demo clip fire boxes moved 39-69% of
+    their pixels between frames, orange parcels at most 20% (same model, same confidence range).
+    """
+
+    def __init__(self, inner: Any, kinds: Iterable[str] = ("fire",), min_motion: float = 0.25,
+                 pixel_delta: int = 12) -> None:
+        self.inner, self.kinds = inner, set(kinds)
+        self.min_motion, self.pixel_delta = min_motion, pixel_delta
+        self.prev: np.ndarray | None = None
+
+    def detect(self, frame: np.ndarray) -> list[Detection]:
+        found = self.inner.detect(frame)
+        gray = cv2.GaussianBlur(cv2.cvtColor(cv2.resize(frame, (320, 180)), cv2.COLOR_BGR2GRAY),
+                                (5, 5), 0)
+        prev, self.prev = self.prev, gray
+        if prev is None:                           # no earlier frame: cannot tell, so do not alert
+            return [d for d in found if d.kind not in self.kinds]
+        diff = cv2.absdiff(gray, prev)
+        h, w = frame.shape[:2]
+        kept: list[Detection] = []
+        for d in found:
+            if d.kind in self.kinds and d.box is not None:
+                x, y, bw, bh = d.box
+                x0, y0 = int(x * 320 / w), int(y * 180 / h)
+                x1, y1 = max(x0 + 1, int((x + bw) * 320 / w)), max(y0 + 1, int((y + bh) * 180 / h))
+                region = diff[y0:y1, x0:x1]
+                if region.size == 0 or float((region > self.pixel_delta).mean()) < self.min_motion:
+                    continue
+            elif d.kind in self.kinds:
+                continue
+            kept.append(d)
+        return kept
+
+
 class MotionDetector:
     """Background subtraction: reports one detection when enough of the frame changed."""
 
@@ -120,6 +158,19 @@ class FireHeuristic:
 
 def load_class_names(path: Path) -> list[str]:
     return [line.strip().lower() for line in path.read_text().splitlines() if line.strip()]
+
+
+def package_class_kinds(names: list[str]) -> dict[int, str]:
+    """Map a custom parcel model's class names (``package.names``) to the ``package`` kind."""
+    words = ("package", "parcel", "box", "carton")
+    return {i: "package" for i, name in enumerate(names) if any(w in name for w in words)}
+
+
+def coco_kinds(custom_package_model: bool) -> dict[int, str]:
+    """COCO ids to report. With a real parcel model the backpack/handbag/suitcase stand-ins go."""
+    if not custom_package_model:
+        return dict(COCO_KINDS)
+    return {i: k for i, k in COCO_KINDS.items() if k != "package"}
 
 
 def fire_class_kinds(names: list[str]) -> dict[int, str]:

@@ -160,3 +160,43 @@ def test_per_kind_confidence_floors(tmp_path):
     assert [(d.kind, round(d.confidence, 2)) for d in got] == [("smoke", 0.9)]
     det.net = Net([[0.60, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     assert [d.kind for d in det.detect(np.zeros((100, 100, 3), np.uint8))] == ["fire"]
+
+
+def _gated_frames():
+    """Two scenes with a fire box: one static, one flickering inside the box."""
+    import numpy as np
+    rng = np.random.default_rng(1)
+    static = [np.full((180, 320, 3), 90, np.uint8) for _ in range(4)]
+    flicker = []
+    for _ in range(4):
+        f = np.full((180, 320, 3), 90, np.uint8)
+        f[40:120, 60:200] = rng.integers(0, 255, (80, 140, 3), dtype=np.uint8)
+        flicker.append(f)
+    return static, flicker
+
+
+class _AlwaysFire:
+    def detect(self, frame):
+        return [Detection("fire", 0.7, (60, 40, 140, 80)), Detection("person", 0.9, (0, 0, 5, 5))]
+
+
+def test_motion_gate_drops_static_fire_and_keeps_flickering_fire():
+    from vis.detectors import MotionGated
+    static, flicker = _gated_frames()
+    gate = MotionGated(_AlwaysFire(), kinds=("fire",), min_motion=0.25)
+    out_static = [gate.detect(f) for f in static]
+    assert all(d.kind == "person" for out in out_static for d in out)       # fire never passes
+    gate = MotionGated(_AlwaysFire(), kinds=("fire",), min_motion=0.25)
+    out_flicker = [gate.detect(f) for f in flicker]
+    assert [d.kind for d in out_flicker[0]] == ["person"]                   # first frame: unknown
+    assert all("fire" in [d.kind for d in out] for out in out_flicker[1:])  # then it passes
+    assert all("person" in [d.kind for d in out] for out in out_flicker)    # other kinds untouched
+
+
+def test_package_model_names_and_coco_stand_ins():
+    from vis.detectors import COCO_KINDS, coco_kinds, package_class_kinds
+    assert package_class_kinds(["parcel", "person", "Cardboard Box"]) == {0: "package"}
+    assert package_class_kinds(["package", "box_open"]) == {0: "package", 1: "package"}
+    assert package_class_kinds(["dog"]) == {}
+    assert coco_kinds(False) == COCO_KINDS
+    assert "package" not in coco_kinds(True).values() and "person" in coco_kinds(True).values()
