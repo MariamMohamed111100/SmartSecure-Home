@@ -25,3 +25,7 @@ infra/ca/
 **/tests/
 **/*.db
 docs/
+
+# vision models/videos/faces are bind-mounted at runtime, never baked into the image
+services/vision/models/
+services/vision/media/

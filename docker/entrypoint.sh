@@ -14,4 +14,12 @@ for f in /run/secrets/*; do
 done
 chown -R app:app "$KEYS"
 
+# Shared data volume (vision writes snapshots/, api and frontend read): a fresh named volume is
+# root-owned, so hand the top level to app. Not recursive: existing files keep their owners.
+if [ -d /data ]; then
+    mkdir -p /data/snapshots
+    chown app:app /data /data/snapshots
+    chmod 0755 /data /data/snapshots
+fi
+
 exec gosu app "$@"

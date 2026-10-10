@@ -21,9 +21,10 @@ smoke:        ## Verify every service is alive over MQTT/TLS
 
 test:         ## Unit tests (no Docker needed)
 	pip install -q -e libs/common pytest jsonschema pyyaml gpiozero httpx \
-	  -r services/api/requirements.txt
+	  -r services/api/requirements.txt -r services/vision/requirements.txt
 	pytest libs/common/tests services/simulators/tests -q
 	pytest services/api/tests -q
+	pytest services/vision/tests -q
 
 lint:
 	ruff check .
@@ -40,6 +41,9 @@ watch:        ## Live-print events:  make watch  (or T='home/#' for everything)
 
 ws:           ## Live dashboard feed in the terminal (logs in with .env credentials)
 	python scripts/ws_listen.py
+
+vision-models: ## Download the free vision models (YOLOv8n, face detector/recognizer) once
+	python3 scripts/fetch_vision_models.py
 
 demo-incident: ## Play the proposal's garage-intruder incident end to end (checks the API afterwards)
 	python scripts/demo_incident.py
