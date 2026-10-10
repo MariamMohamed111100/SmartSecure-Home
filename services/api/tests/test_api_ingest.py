@@ -141,3 +141,15 @@ def test_ingestion_survives_a_database_error(client, auth, feed, monkeypatch):
     feed("home/garage/pir/pir_garage/event", make_event())        # must not raise
     monkeypatch.undo()
     assert json.dumps(client.get("/events", headers=auth).json()) == "[]"
+
+
+def test_vision_alert_with_its_extra_fields_is_stored_and_served(client, auth, feed):
+    """Shape produced by services/vision (confidence, snapshot, camera_id, latency_ms)."""
+    from smartsecure_common import Event
+    event = Event(source="vision", type="face.unknown", zone="entrance", severity_hint="high",
+                  data={"confidence": 0.94, "camera_id": "cam_entrance", "latency_ms": 183,
+                        "snapshot": "snapshots/abc.jpg"})
+    feed("security/alerts/vision", event.model_dump_json())
+    (stored,) = client.get("/events?type=face.unknown", headers=auth).json()
+    assert stored["data"]["snapshot"] == "snapshots/abc.jpg" and stored["integrity_ok"] is True
+    assert stored["source"] == "vision" and stored["zone"] == "entrance"

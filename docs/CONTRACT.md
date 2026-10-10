@@ -85,6 +85,11 @@ Snapshots referenced in `data.snapshot` are relative to the shared `data` volume
 | `cyber.brute_force` | cyber | `src_ip`, `target` | engine rule |
 | `cyber.rogue_device` | cyber | `mac`, `ip` | engine rule |
 
+Vision events also carry `camera_id` and `latency_ms` (capture to publish) in `data`;
+`person.detected` adds `name` when a known face matched; `face.unknown`/`fire.detected` always carry
+`snapshot` unless the volume was not writable (then the alert is still sent, without it). Vision
+sends `motion.outdoor` only for zones listed under `outdoor_zones`.
+
 Adding a type: add a row here, then (if scored) a line in `config/risk_scores.yaml`.
 
 ## 4. Payloads
