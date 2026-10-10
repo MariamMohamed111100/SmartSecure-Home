@@ -49,3 +49,14 @@ Thumbs.db
 
 # --- personal data: never commit face photos for recognition (vision module)
 known_faces/
+
+# --- vision: downloaded models, demo videos and photos of people never go into git
+services/vision/models/*
+!services/vision/models/.gitkeep
+!services/vision/models/join_models.py
+services/vision/media/videos/*
+!services/vision/media/videos/.gitkeep
+services/vision/media/known_faces/*
+!services/vision/media/known_faces/.gitkeep
+*.onnx
+*.pt

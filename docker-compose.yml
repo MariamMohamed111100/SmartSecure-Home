@@ -108,10 +108,18 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: vision}}
     environment:
       {<<: *mqtt, MQTT_USER: vision, MQTT_PASSWORD: "${MQTT_PASSWORD_VISION}",
-       MQTT_CLIENT_CERT: /certs/clients/vision.crt, MQTT_CLIENT_KEY: /run/app-secrets/vision_client_key}
+       MQTT_CLIENT_CERT: /certs/clients/vision.crt, MQTT_CLIENT_KEY: /run/app-secrets/vision_client_key,
+       # a looped video file by default; for the RTSP demo set VISION_SOURCE=rtsp://rtsp:8554/camera
+       VISION_SOURCE: "${VISION_SOURCE:-/media/videos/demo.mp4}",
+       CAMERA_ID: "${CAMERA_ID:-cam_entrance}", CAMERA_ZONE: "${CAMERA_ZONE:-entrance}",
+       FIRE_IMGSZ: "${FIRE_IMGSZ:-640}", FIRE_MIN_CONF: "${FIRE_MIN_CONF:-0.55}",
+       SMOKE_FROM_MODEL: "${SMOKE_FROM_MODEL:-false}", SMOKE_MIN_CONF: "${SMOKE_MIN_CONF:-0.8}"}
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/vision.crt:/certs/clients/vision.crt:ro
+      - ./config:/config:ro
+      - ./services/vision/models:/app/models:ro          # `make vision-models` downloads these
+      - ./services/vision/media:/media:ro                # videos/ and known_faces/
       - data:/data            # snapshots written here; api + dashboard read them
     secrets: [vision_client_key]
     depends_on: [mosquitto]
@@ -157,9 +165,20 @@ services:
   # ---- Demo/profile services (P4/P5). Start with: docker compose --profile demo up
   # They do NOT affect `docker compose up` (CI, everyday dev) - see docs/CONTRACT.md.
   rtsp:
-    image: bluenoir/mediamtx:latest
+    image: bluenviron/mediamtx:latest
     profiles: ["demo"]
     ports: ["8554:8554"]        # camera feed for the vision pipeline (P4)
+    restart: unless-stopped
+
+  # Plays services/vision/media/videos/demo.mp4 on a loop into the RTSP server (a fake IP camera).
+  camera:
+    image: linuxserver/ffmpeg:latest
+    profiles: ["demo"]
+    command: ["-re", "-stream_loop", "-1", "-i", "/media/videos/demo.mp4", "-c", "copy",
+              "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://rtsp:8554/camera"]
+    volumes:
+      - ./services/vision/media:/media:ro
+    depends_on: [rtsp]
     restart: unless-stopped
 
   attacker:

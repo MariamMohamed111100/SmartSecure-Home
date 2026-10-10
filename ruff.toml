@@ -9,5 +9,5 @@ select = ["E", "F", "I", "B"]
 known-first-party = [
   "smartsecure_common", "sim",
   "database", "models", "routes", "security", "storage", "audit",
-  "mqtt_handler", "websocket_manager", "zones_seed",
+  "mqtt_handler", "websocket_manager", "zones_seed", "vis",
 ]
