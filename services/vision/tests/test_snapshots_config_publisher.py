@@ -73,6 +73,14 @@ def test_fire_model_input_size_is_configurable(monkeypatch):
 def test_smoke_from_model_is_off_by_default(monkeypatch):
     from vis.config import Settings
     s = Settings()
-    assert (s.fire_min_conf, s.smoke_min_conf, s.smoke_from_model) == (0.55, 0.8, False)
+    assert (s.fire_min_conf, s.smoke_min_conf, s.smoke_from_model) == (0.5, 0.8, False)
     monkeypatch.setenv("SMOKE_FROM_MODEL", "true")
     assert Settings().smoke_from_model is True
+
+
+def test_fire_and_package_settings_defaults(monkeypatch):
+    from vis.config import Settings
+    s = Settings()
+    assert (s.fire_min_motion, s.package_min_conf, s.package_size) == (0.25, 0.5, 640)
+    monkeypatch.setenv("FIRE_MIN_MOTION", "0.4")
+    assert Settings().fire_min_motion == 0.4

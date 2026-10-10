@@ -55,7 +55,10 @@ so one person does not produce two alerts.
 | `MIN_CONFIDENCE` / `FACE_MIN_CONFIDENCE` | 0.45 / 0.8 | detection thresholds |
 | `FACE_MATCH_THRESHOLD` | 0.363 | SFace cosine cut-off: raise it to be stricter |
 | `COOLDOWN_PERSON` etc. | 10 / 30 / 60 s ... | min seconds between alerts of one type |
-| `FIRE_MIN_CONF` | 0.55 | minimum confidence for a `fire.detected` from the model |
+| `FIRE_MIN_CONF` | 0.5 | minimum confidence for a `fire.detected` from the model |
+| `FIRE_MIN_MOTION` | 0.25 | share of the fire box that must change between frames (flames flicker, parcels do not) |
+| `PACKAGE_MIN_CONF` | 0.5 | minimum confidence of the optional parcel model |
+| `PACKAGE_IMGSZ` | 640 | input size the parcel model was exported with |
 | `SMOKE_FROM_MODEL` | false | let the model raise `smoke.detected` (see below: off on purpose) |
 | `SMOKE_MIN_CONF` | 0.8 | minimum confidence for model smoke, only used when the above is true |
 | `FIRE_IMGSZ` | 640 | input size the fire model was exported with (`imgsz=` at export) |
@@ -79,14 +82,33 @@ printf 'Fire\ndefault\nsmoke\n' > services/vision/models/fire.names   # SAME ord
 echo 'FIRE_IMGSZ=800' >> .env                                  # and pass it to the vision service
 ```
 
-**Smoke from the model is OFF by default.** `smoke.detected` scores 100 (siren), and the small
-Roboflow model fired at 0.90 on a plain white hallway wall while scoring only 0.35-0.57 on real
-smoke in the demo clip. Fire (floor 0.55) separated real flames (0.55-0.66) from orange parcels
-(<=0.51) on the same clip, but with a thin margin: retrain with more data before relying on it.
-Smoke still reaches the engine from the simulators. Turn it on with `SMOKE_FROM_MODEL=true` once
-you have a better model.
+Fire is **gated on motion**: a fire box must change between frames (>= `FIRE_MIN_MOTION`). On the
+demo clip real flames changed 39-69% of the box, static orange parcels at most 20%, so with the gate
+the fire floor can sit at 0.5 without false alarms from parcels.
+
+**Smoke from the model is OFF by default.** `smoke.detected` scores 100 (siren) and no setting makes
+this model trustworthy: on the demo clip it scored 0.91 on a plain white hallway wall and only
+0.32-0.63 on real smoke, with the same (low) motion in both, so neither a confidence floor nor the
+motion gate separates them. Smoke still reaches the engine from the simulators. To get model smoke
+you need a better model (more smoke photos **and** plenty of negative indoor scenes: walls,
+corridors, steam, white clothes), then `SMOKE_FROM_MODEL=true`.
 
 Check `model.names` in Python first: the line order of `fire.names` must be the class id order.
+
+## Packages
+
+COCO has no parcel class, so by default `package.detected` only fires for backpacks, handbags and
+suitcases and **misses cardboard boxes**. For real parcels train a free model the same way as the
+fire one (Colab + a Roboflow Universe dataset such as "package detection" / "parcels-detection"),
+then:
+
+```bash
+yolo export model=best.pt format=onnx imgsz=640 opset=12
+cp best.onnx services/vision/models/package.onnx
+printf 'package\n' > services/vision/models/package.names    # same order as model.names
+```
+
+With `package.onnx` present, the COCO stand-ins are switched off and the parcel model is used.
 
 ## Tests
 

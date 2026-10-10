@@ -112,8 +112,10 @@ services:
        # a looped video file by default; for the RTSP demo set VISION_SOURCE=rtsp://rtsp:8554/camera
        VISION_SOURCE: "${VISION_SOURCE:-/media/videos/demo.mp4}",
        CAMERA_ID: "${CAMERA_ID:-cam_entrance}", CAMERA_ZONE: "${CAMERA_ZONE:-entrance}",
-       FIRE_IMGSZ: "${FIRE_IMGSZ:-640}", FIRE_MIN_CONF: "${FIRE_MIN_CONF:-0.55}",
-       SMOKE_FROM_MODEL: "${SMOKE_FROM_MODEL:-false}", SMOKE_MIN_CONF: "${SMOKE_MIN_CONF:-0.8}"}
+       FIRE_IMGSZ: "${FIRE_IMGSZ:-640}", FIRE_MIN_CONF: "${FIRE_MIN_CONF:-0.5}",
+       SMOKE_FROM_MODEL: "${SMOKE_FROM_MODEL:-false}", SMOKE_MIN_CONF: "${SMOKE_MIN_CONF:-0.8}",
+       FIRE_MIN_MOTION: "${FIRE_MIN_MOTION:-0.25}", PACKAGE_MIN_CONF: "${PACKAGE_MIN_CONF:-0.5}",
+       PACKAGE_IMGSZ: "${PACKAGE_IMGSZ:-640}"}
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/vision.crt:/certs/clients/vision.crt:ro
