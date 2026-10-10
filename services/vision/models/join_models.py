@@ -54,7 +54,9 @@ def main() -> int:
     names = src / "fire.names"
     if names.exists() and src != dst:
         shutil.copy2(names, dst / "fire.names")
-    print("\nAll models are complete." if ok else "\nSome files are missing or damaged: download them again.")
+    msg = ("All models are complete." if ok
+           else "Some files are missing or damaged: download them again.")
+    print("\n" + msg)
     return 0 if ok else 1
 
 
