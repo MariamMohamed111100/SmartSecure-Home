@@ -149,7 +149,7 @@ placeholder handles in `.github/CODEOWNERS` — see `docs/BRANCHING.md`.
 | 1 | Lead / DevOps / Security foundations | `infra/ docker/ scripts/ contract/` | done: mTLS broker, CI, smoke test |
 | 2 | Backend API | `services/api` | done: REST, WebSocket, validated ingestion, audit |
 | 3 | IoT simulation + scenarios | `services/simulators` | done: 20 devices, 4 scenarios, HAL |
-| 4 | AI surveillance | `services/vision` | placeholder (heartbeat only) |
+| 4 | AI surveillance | `services/vision` | YOLOv8n + face recognition + motion, see `services/vision/README.md` |
 | 5 | Cybersecurity | `services/cyber` | placeholder |
 | 6 | Risk, correlation, response | `services/engine` | placeholder |
 | 7 | Frontend / digital twin | `services/frontend` | placeholder page + reverse proxy |
