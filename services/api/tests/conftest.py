@@ -9,8 +9,14 @@ import pathlib
 import sys
 import tempfile
 import types
+import warnings
 
 import pytest
+
+# Starlette 1.x emits a DeprecationWarning on every TestClient import ("Using `httpx` with
+# `starlette.testclient` is deprecated; install `httpx2`"). We pin the tested pair in
+# requirements, so silence it here to keep a green run warning-free.
+warnings.filterwarnings("ignore", message=r"Using .*starlette\.testclient.*is deprecated.*")
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "services/api"))

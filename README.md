@@ -150,7 +150,7 @@ placeholder handles in `.github/CODEOWNERS` — see `docs/BRANCHING.md`.
 | 2 | Backend API | `services/api` | done: REST, WebSocket, validated ingestion, audit |
 | 3 | IoT simulation + scenarios | `services/simulators` | done: 20 devices, 4 scenarios, HAL |
 | 4 | AI surveillance | `services/vision` | YOLOv8n + face recognition + motion, see `services/vision/README.md` |
-| 5 | Cybersecurity | `services/cyber` | placeholder |
+| 5 | Cybersecurity | `services/cyber` | done: Suricata rules, scan/brute-force/rogue detection, IPS blocks, demo rig (see its README) |
 | 6 | Risk, correlation, response | `services/engine` | done: scoring, correlation, incidents, responses (see its README) |
 | 7 | Frontend / digital twin | `services/frontend` | placeholder page + reverse proxy |
 

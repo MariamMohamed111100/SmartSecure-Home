@@ -42,6 +42,10 @@ per-device LWT is not possible).
  "ip": "203.0.113.9", "reason": "cyber.port_scan", "window_seconds": 3600}
 ```
 
+`action` is optional (`"block"` by default; `"unblock"` lifts a block early, used by admin tooling,
+never sent by the engine). Cyber confirms every change on `security/alerts/cyber` as
+`cyber.ip_blocked` / `cyber.ip_unblocked` (not scored, section 3).
+
 ## 2. Event envelope (`contract/event.schema.json`)
 
 ```json
@@ -84,6 +88,8 @@ Snapshots referenced in `data.snapshot` are relative to the shared `data` volume
 | `cyber.port_scan` | cyber | `src_ip`, `dst_ip`, `ports` | 25 |
 | `cyber.brute_force` | cyber | `src_ip`, `target` | 35 |
 | `cyber.rogue_device` | cyber | `mac`, `ip` | 30 |
+| `cyber.ip_blocked` | cyber | `ip`, `reason`, `expires_at` | not scored |
+| `cyber.ip_unblocked` | cyber | `ip` | not scored |
 
 Vision events also carry `camera_id` and `latency_ms` (capture to publish) in `data`;
 `person.detected` adds `name` when a known face matched; `face.unknown`/`fire.detected` always carry
@@ -267,7 +273,7 @@ postgres            engine ─ system/block ─ cyber
 - Fresh clone: **run `make setup` first** — it generates `.env`, certs and the MQTT password file.
   `docker compose up` alone intentionally refuses to hardcode dev secrets.
 
-## 9. Engine behaviour (Person 6, `services/engine`)
+## 11. Engine behaviour (Person 6, `services/engine`)
 
 Everything is configured in `config/risk_scores.yaml`; code only enforces it.
 
@@ -287,3 +293,35 @@ Everything is configured in `config/risk_scores.yaml`; code only enforces it.
   `unlock_doors` only when a `life_safety_events` event (fire/smoke/gas) is part of the incident,
   otherwise doors are left alone. `event_actions` (e.g. `water.leak` -> `close_valve`) run per event.
 - Commands use section 4.2 with `requested_by: "engine"` and `reason: <incident id>`.
+
+## 12. Cyber behaviour (Person 5, `services/cyber`)
+
+All cyber events use zone `network`. Details and settings: `services/cyber/README.md`.
+
+- **Detection:** Suricata (`services/cyber/suricata/smartsecure.rules`) writes `eve.json`; the service
+  turns it into **one event per attack**, never one per packet (the engine counts every event):
+  - `cyber.port_scan` `{src_ip, dst_ip, ports, port_count, hosts_probed, window_s}`: at least
+    `PORTSCAN_MIN_TARGETS` distinct host:port pairs from one source inside `PORTSCAN_WINDOW_S`,
+    then quiet for `PORTSCAN_COOLDOWN_S`.
+  - `cyber.brute_force` `{src_ip, dst_ip, target, protocol, attempts, window_s}`: at least
+    `BRUTE_MIN_ATTEMPTS` login attempts (HTTP `POST /login`, or SSH connections) against one service
+    inside `BRUTE_WINDOW_S`.
+  - `cyber.rogue_device` `{mac, ip, seen_via, hostname?, src_ip?}`: a MAC that asks for a DHCP lease
+    (or appears in the ARP table, `ROGUE_ARP=true`) and is not in `services/cyber/known_devices.yaml`.
+    `ip` is `"0.0.0.0"` until the device has a lease; `src_ip` is only present once it has one, so
+    the engine can block it. Detection stays OFF while the allowlist is empty.
+- **`data.src_ip` is the attacker.** The engine copies it into `system/block`. Only events that name
+  an attacker carry it; `cyber.ip_blocked` uses `ip`, so confirmations are never scored or re-blocked.
+- **IPS:** cyber executes `system/block` (strict IP parsing; never loopback, multicast, link-local,
+  reserved or `CYBER_NEVER_BLOCK`; window clamped to `BLOCK_MIN_S`..`BLOCK_MAX_S`; at most `MAX_BLOCKS`
+  at once; duplicate command ids ignored) and also blocks a confirmed scan or brute force itself
+  (`CYBER_AUTOBLOCK`, default both, for `CYBER_AUTOBLOCK_S`) so the attacker is cut off before the
+  risk score is even computed. Backends: `blocklist` (state file read by the demo victim; default) and
+  `iptables` (real drops; needs root + NET_ADMIN, see the service README). Active blocks survive a
+  restart (`/data/blocklist.json`) and expire on their own.
+- **Limits:** at most `CYBER_MAX_EVENTS_PER_MIN` events per minute leave the service, and every
+  piece of detector state is bounded, so a spoofed-source flood cannot exhaust memory or the
+  firewall (it can only cause blocks of spoofed addresses up to `MAX_BLOCKS`, for a short time).
+- **Demo rig** (`docker compose --profile demo up`): `attacker` (nmap, hydra, raw DHCP) ->
+  `smartlock` (victim; also refuses blocked sources), sniffed by `suricata` in the attacker's network
+  namespace. Run it with `make demo-scan | demo-brute | demo-rogue | demo-attack`.

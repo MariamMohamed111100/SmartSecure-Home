@@ -42,6 +42,14 @@ class Scorer:
         self.purge(now)
         return sorted({c.zone for c in self.contribs if c.zone not in NON_PHYSICAL_ZONES})
 
+    def zones(self, now: float) -> list[str]:
+        """Zones with live risk: every physical zone, plus `network` when only the network
+        (a scan, a brute-force, a rogue device) is under way with no physical event."""
+        found = self.physical_zones(now)
+        if any(c.zone in NON_PHYSICAL_ZONES for c in self.contribs):
+            found.append("network")
+        return found
+
     def add_event(self, event_type: str, zone: str, event_id: str, now: float
                   ) -> Contribution | None:
         self.purge(now)
@@ -60,7 +68,7 @@ class Scorer:
     def correlate(self, now: float) -> list[Contribution]:
         """Per zone: a rule adds its bonus once while its inputs are recent and it is not alive."""
         fired: list[Contribution] = []
-        for zone in self.physical_zones(now):
+        for zone in self.zones(now):
             for rule in self.policy.correlations:
                 if any(c.kind == "correlation" and c.type == rule.name and c.zone == zone
                        for c in self.contribs):

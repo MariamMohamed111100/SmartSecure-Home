@@ -22,4 +22,8 @@ if [ -d /data ]; then
     chmod 0755 /data /data/snapshots
 fi
 
+# Opt-in only (cyber with CYBER_FIREWALL=iptables must edit netfilter rules, which needs root).
+if [ "${RUN_AS_ROOT:-0}" = "1" ]; then
+    exec "$@"
+fi
 exec gosu app "$@"

@@ -14,7 +14,7 @@ def test_missing_and_garbage_tokens_are_rejected(client):
 
 def test_expired_and_foreign_tokens_are_rejected(client):
     expired = jwt.encode({"sub": "admin", "exp": 1}, "j" * 48, algorithm="HS256")
-    foreign = jwt.encode({"sub": "admin", "exp": 4102444800}, "other-secret", algorithm="HS256")
+    foreign = jwt.encode({"sub": "admin", "exp": 4102444800}, "other-secret" * 4, algorithm="HS256")
     for token in (expired, foreign):
         r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 401
@@ -48,13 +48,29 @@ def test_swagger_is_off_unless_enabled(client):
     assert client.get("/openapi.json").status_code == 404
 
 
-@pytest.mark.parametrize("route", [r for r in main.app.routes if isinstance(r, APIRoute)],
+def _http_routes(routes=None):
+    """Every HTTP route the app serves.
+
+    FastAPI wraps included routers lazily (`_IncludedRouter`), so they do not show up as plain
+    `APIRoute` in ``app.routes``; unwrap them so a route added later without auth is really
+    exercised instead of silently skipped."""
+    for route in main.app.routes if routes is None else routes:
+        included = getattr(route, "original_router", None)
+        if included is not None:
+            yield from _http_routes(included.routes)
+        elif isinstance(route, APIRoute):
+            yield route
+
+
+@pytest.mark.parametrize("route", list(_http_routes()),
                          ids=lambda r: f"{sorted(r.methods)[0]} {r.path}")
 def test_every_http_route_requires_a_token(client, route):
     """Secure by default: a route added later without auth fails this test."""
     method = sorted(route.methods)[0]
-    if (method, route.path) in PUBLIC or route.path == "/auth/me":
-        pytest.skip("public or checked elsewhere")
     path = route.path.replace("{device_id}", "x").replace("{event_id}", "x") \
         .replace("{incident_id}", "x")
-    assert client.request(method, path).status_code == 401
+    status = client.request(method, path).status_code
+    if (method, route.path) in PUBLIC:
+        assert status != 401, "public route must not demand a token"
+    else:
+        assert status == 401
