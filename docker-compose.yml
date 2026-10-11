@@ -143,7 +143,10 @@ services:
     build: {context: ., dockerfile: docker/python-service.Dockerfile, args: {SERVICE: engine}}
     environment:
       {<<: *mqtt, MQTT_USER: engine, MQTT_PASSWORD: "${MQTT_PASSWORD_ENGINE}",
-       MQTT_CLIENT_CERT: /certs/clients/engine.crt, MQTT_CLIENT_KEY: /run/app-secrets/engine_client_key}
+       MQTT_CLIENT_CERT: /certs/clients/engine.crt, MQTT_CLIENT_KEY: /run/app-secrets/engine_client_key,
+       RISK_SCORES_FILE: /config/risk_scores.yaml,
+       NTFY_TOPIC: "${NTFY_TOPIC:-}", NTFY_SERVER: "${NTFY_SERVER:-https://ntfy.sh}",
+       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}", TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"}
     volumes:
       - ./infra/certs/ca.crt:/certs/ca.crt:ro
       - ./infra/certs/clients/engine.crt:/certs/clients/engine.crt:ro

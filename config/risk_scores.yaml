@@ -1,5 +1,7 @@
 # Owned by Person 6 (engine). Values come from the proposal. Change here, not in code.
 decay_minutes: 10          # an event stops counting this long after it happened
+repeat_cap: 3              # the same event type counts at most this many times per window
+max_score: 100
 events:
   face.unknown: 40
   motion.night: 20
@@ -13,6 +15,9 @@ events:
   fire.detected: 100
   gas.detected: 80
   cyber.port_scan: 25
+  cyber.brute_force: 35
+  cyber.rogue_device: 30
+  water.leak: 35
 levels:                    # inclusive lower bounds
   low: 0
   medium: 31
@@ -28,3 +33,17 @@ responses:
   medium: [log, notify]
   high: [log, notify, lights_on, siren, block_ip]
   critical: [log, notify, lights_on, siren, block_ip, unlock_doors]
+
+# Extra points when two signals together mean more than either alone (applied once while both live).
+# The demo (motion.night + face.unknown + cyber.port_scan = 85) matches no rule on purpose.
+correlations:
+  - {name: unknown_face_and_failed_login, requires: [face.unknown, lock.login_failed], bonus: 25, within_minutes: 5}
+  - {name: camera_offline_and_door_open, requires: [camera.disconnected, door.open], bonus: 30, within_minutes: 5}
+  - {name: scan_and_outdoor_motion, requires: [cyber.port_scan, motion.outdoor], bonus: 25, within_minutes: 5}
+  - {name: smoke_and_heat, requires: [smoke.detected, temperature.abnormal], bonus: 40, within_minutes: 5}
+  - {name: leak_and_valve_closed, requires: [water.leak, valve.closed], bonus: 10, within_minutes: 5}
+event_actions:             # extra response triggered by one specific event
+  water.leak: [close_valve]
+life_safety_events: [smoke.detected, fire.detected, gas.detected]   # only these let unlock_doors act
+block_minutes: 60
+never_block: []            # extra CIDRs never to block (ENGINE_NEVER_BLOCK env adds more)

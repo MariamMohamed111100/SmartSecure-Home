@@ -80,10 +80,10 @@ Snapshots referenced in `data.snapshot` are relative to the shared `data` volume
 | `window.open` | simulators | `window_id` | not scored |
 | `smoke.detected` | simulators/vision | `sensor_id` | 100 |
 | `gas.detected` | simulators | `sensor_id`, `ppm` | 80 |
-| `water.leak` | simulators | `sensor_id` | engine rule |
+| `water.leak` | simulators | `sensor_id` | 35 |
 | `cyber.port_scan` | cyber | `src_ip`, `dst_ip`, `ports` | 25 |
-| `cyber.brute_force` | cyber | `src_ip`, `target` | engine rule |
-| `cyber.rogue_device` | cyber | `mac`, `ip` | engine rule |
+| `cyber.brute_force` | cyber | `src_ip`, `target` | 35 |
+| `cyber.rogue_device` | cyber | `mac`, `ip` | 30 |
 
 Vision events also carry `camera_id` and `latency_ms` (capture to publish) in `data`;
 `person.detected` adds `name` when a known face matched; `face.unknown`/`fire.detected` always carry
@@ -266,3 +266,24 @@ postgres            engine ─ system/block ─ cyber
   `docker-compose.yml`. Final Suricata/attacker layout is owned by Person 5; RTSP by Person 4.
 - Fresh clone: **run `make setup` first** — it generates `.env`, certs and the MQTT password file.
   `docker compose up` alone intentionally refuses to hardcode dev secrets.
+
+## 9. Engine behaviour (Person 6, `services/engine`)
+
+Everything is configured in `config/risk_scores.yaml`; code only enforces it.
+
+- **Input:** `home/+/+/+/event`, `home/+/+/+/status`, `security/alerts/vision`, `security/alerts/cyber`
+  (never its own output). An event whose `zone` differs from its topic zone is dropped; bad JSON,
+  oversized (>64 KB) or invalid envelopes are dropped and logged. Duplicate event `id`s count once.
+- **Score:** sum of live event points (an event counts for `decay_minutes`; one type counts at most
+  `repeat_cap` times), plus a `correlations` bonus once while all its inputs are alive, capped at
+  `max_score`. Level from `levels`. The demo (20 + 40 + 25) is 85 = High with no bonus.
+- **Incident:** opened at Medium or above, same `id` re-sent as it grows (`events` in order),
+  closed (published once more) when the score decays to 0. Risk (`security/risk`, retained) is
+  published only when score, level, zone or actions change.
+- **Responses** are cumulative per level and run once per incident:
+  `lights_on` = bulbs in the incident zone; `siren` = all sirens (switched off again on close);
+  `block_ip` = `system/block` for each valid `data.src_ip` (never loopback/multicast/link-local/
+  reserved or `never_block`); `notify` = ntfy/Telegram when configured, log otherwise;
+  `unlock_doors` only when a `life_safety_events` event (fire/smoke/gas) is part of the incident,
+  otherwise doors are left alone. `event_actions` (e.g. `water.leak` -> `close_valve`) run per event.
+- Commands use section 4.2 with `requested_by: "engine"` and `reason: <incident id>`.
