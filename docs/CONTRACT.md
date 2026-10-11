@@ -274,11 +274,11 @@ Everything is configured in `config/risk_scores.yaml`; code only enforces it.
 - **Input:** `home/+/+/+/event`, `home/+/+/+/status`, `security/alerts/vision`, `security/alerts/cyber`
   (never its own output). An event whose `zone` differs from its topic zone is dropped; bad JSON,
   oversized (>64 KB) or invalid envelopes are dropped and logged. Duplicate event `id`s count once.
-- **Score:** sum of live event points (an event counts for `decay_minutes`; one type counts at most
+- **Score (per zone):** a zone counts its own live events plus the house-wide `network` ones (a port scan); other zones never add to it. Sum of live event points (an event counts for `decay_minutes`; one type counts at most
   `repeat_cap` times), plus a `correlations` bonus once while all its inputs are alive, capped at
   `max_score`. Level from `levels`. The demo (20 + 40 + 25) is 85 = High with no bonus.
 - **Incident:** opened at Medium or above, same `id` re-sent as it grows (`events` in order),
-  closed (published once more) when the score decays to 0. Risk (`security/risk`, retained) is
+  closed (published once more) when the score decays to 0. One incident and one risk row per zone. Risk (`security/risk`, retained) is
   published only when score, level, zone or actions change.
 - **Responses** are cumulative per level and run once per incident:
   `lights_on` = bulbs in the incident zone; `siren` = all sirens (switched off again on close);

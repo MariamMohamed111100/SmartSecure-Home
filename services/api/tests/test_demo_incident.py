@@ -156,3 +156,11 @@ def test_the_demo_notices_when_a_detection_never_arrives(client, auth, world, ho
     broken = InProcessTransport(client, auth, world, house, drop={"security/alerts/vision"})
     failures = demo_incident.play(broken, out=lambda _: None)
     assert any("incident" in f for f in failures)
+
+
+def test_the_demo_refuses_to_run_on_top_of_live_garage_risk(transport):
+    transport.world.engine.on_message("security/alerts/vision", json.dumps({
+        "id": "e1", "ts": "2026-01-01T00:00:00+00:00", "source": "vision", "type": "face.unknown",
+        "zone": "garage", "severity_hint": "high", "data": {}}))
+    failures = demo_incident.play(transport, out=lambda _: None)
+    assert failures and "live garage risk" in failures[0]

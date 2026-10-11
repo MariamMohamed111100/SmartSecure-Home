@@ -158,6 +158,13 @@ def play(t: Transport, *, speed: float = 1.0, out=print) -> list[str]:
         return events[0]["id"] if events else None
 
     out("== Demo incident: garage intruder (proposal timeline) ==")
+    leftover = [r for r in body("/risk") or [] if r["zone"] == "garage" and r["score"] > 0]
+    if leftover:
+        msg = (f"the engine still holds live garage risk ({leftover[0]['score']}) from earlier "
+               "events, so the demo would not reach exactly 85. Wait ~10 minutes or run: "
+               "docker compose restart engine")
+        out("  FAIL  " + msg)
+        return [msg]
     previous = latest_motion_id()
 
     def new_motion() -> str | None:

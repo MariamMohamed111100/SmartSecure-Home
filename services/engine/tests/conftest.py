@@ -43,6 +43,10 @@ class Rig:
         found = [p for t, p, _ in self.out if t == topic]
         return found[-1] if found else None
 
+    def risk(self, zone):
+        found = [p for t, p, _ in self.out if t == "security/risk" and p["zone"] == zone]
+        return found[-1] if found else None
+
     def advance(self, seconds):
         self.t += seconds
         self.engine.tick()
