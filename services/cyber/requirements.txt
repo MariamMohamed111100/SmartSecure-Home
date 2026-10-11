@@ -1,1 +1,2 @@
-# add this module's dependencies here (smartsecure-common is installed automatically)
+# smartsecure-common (paho-mqtt, pydantic) is installed automatically
+pyyaml>=6.0

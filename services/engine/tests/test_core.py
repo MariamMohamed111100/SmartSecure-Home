@@ -170,3 +170,32 @@ def test_block_note_is_not_repeated_on_every_event(rig):
     for _ in range(3):
         rig.send("vision", "face.unknown", "garage")
     assert rig.last("security/incidents")["summary"].count("block_ip ->") == 1
+
+
+def test_cyber_only_attack_opens_a_network_incident_and_blocks(rig):
+    """No physical event at all: a brute force from the LAN must still be handled."""
+    rig.send("cyber", "cyber.brute_force", "network", src_ip="192.168.1.77", target="lock_front")
+    rig.send("cyber", "cyber.rogue_device", "network", mac="aa:bb:cc:dd:ee:ff",
+             ip="192.168.1.77")
+    (_, block), = rig.topic("system/block")
+    assert block["ip"] == "192.168.1.77" and block["reason"] == "cyber.brute_force"
+    inc = rig.last("security/incidents")
+    assert inc["zone"] == "network" and inc["score"] == 65 and inc["level"] == "high"
+    assert "block_ip" in inc["actions"] and "notify" in inc["actions"]
+    assert not rig.topic("home/")            # no siren, no lights for a pure network attack
+
+
+def test_port_scan_alone_is_below_medium_so_the_engine_does_nothing(rig):
+    """CONTRACT 12: cyber autoblocks a lone scan itself; the engine's block_ip starts at High."""
+    rig.send("cyber", "cyber.port_scan", "network", src_ip="192.168.1.77")
+    assert rig.risk("network")["score"] == 25
+    assert not rig.topic("system/block")
+    assert not rig.topic("security/incidents")          # 25 points is below Medium
+
+
+def test_network_incident_closes_when_it_decays(rig):
+    rig.send("cyber", "cyber.brute_force", "network", src_ip="192.168.1.77")
+    rig.send("cyber", "cyber.rogue_device", "network", mac="aa:bb:cc:dd:ee:ff", ip="192.168.1.77")
+    rig.advance(11 * 60)
+    assert rig.risk("network")["score"] == 0
+    assert "closed" in rig.last("security/incidents")["summary"].lower()

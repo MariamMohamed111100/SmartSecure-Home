@@ -8,7 +8,7 @@ dashboard open at http://localhost:8080, ntfy/Telegram on a phone visible to the
 | 0:00 | P1 | 30 s pitch: cyber + physical correlation, all simulated, Pi next | Digital twin, all devices green, score Low |
 | 0:30 | P3 | Run scenario `night_intruder` | Garage PIR triggers, light turns on in the twin |
 | 1:15 | P4 | Video clip shows a stranger | "Unknown face" alert with snapshot |
-| 2:00 | P5 | Launch nmap scan from attacker container | `cyber.port_scan` alert, attacker IP auto-blocked |
+| 2:00 | P5 | `make demo-scan` (nmap from the attacker container; `make demo-brute` for hydra) | `cyber.port_scan` alert, attacker IP auto-blocked, smart lock refuses it |
 | 3:00 | P6 | Point at the risk gauge | Score climbs to 85 (High), siren + notification fire |
 | 4:00 | P7 | Open incident timeline | Chronological events, replay of the incident |
 | 4:45 | P2 | Show Swagger + DB rows | Every event persisted, JWT-protected API |

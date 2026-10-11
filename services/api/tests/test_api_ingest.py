@@ -62,7 +62,8 @@ def test_malformed_events_are_rejected_and_do_not_break_listing(client, auth, fe
     assert ids == ["good-event-01"]
 
 
-@pytest.mark.parametrize("payload", [b"not json", b"[]", b"42", b"\xff\xfe", b"x" * 70_000])
+@pytest.mark.parametrize("payload", [b"not json", b"[]", b"42", b"\xff\xfe", b"x" * 70_000],
+                         ids=["not-json", "list", "int", "invalid-utf8", "oversized"])
 def test_garbage_payloads_are_ignored(client, auth, feed, payload):
     feed("home/garage/pir/pir_garage/event", payload)
     assert client.get("/events", headers=auth).json() == []

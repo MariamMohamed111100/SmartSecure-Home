@@ -142,7 +142,7 @@ class Engine:
             if physical and event.type in self.policy.life_safety:
                 self.episodes.setdefault(event.zone, Episode(event.zone)).life_safety = True
 
-            for zone in self.scorer.physical_zones(now):
+            for zone in self.scorer.zones(now):
                 ep = self.episodes.setdefault(zone, Episode(zone))
                 score = self.scorer.score(now, zone)
                 level = self.policy.level_for(score)
@@ -227,9 +227,13 @@ class Engine:
         self._note(ep, "notify", f"notify via {','.join(channels)} ({level})")
 
     def _do_lights_on(self, ep: Episode, reason: str, scope: str, level: str) -> None:
+        if ep.zone in NON_PHYSICAL_ZONES:       # a network attack has no room to light up
+            return
         self._send_to(ep, "lights_on", "bulb", "on", ep.zone, reason)
 
     def _do_siren(self, ep: Episode, reason: str, scope: str, level: str) -> None:
+        if ep.zone in NON_PHYSICAL_ZONES:       # nobody is in the house because of a port scan
+            return
         self._send_to(ep, "siren", "siren", "on", None, reason)
 
     def _do_close_valve(self, ep: Episode, reason: str, scope: str, level: str) -> None:
@@ -252,7 +256,7 @@ class Engine:
                 self._publish(topics.BLOCK, {
                     "id": uuid.uuid4().hex, "ts": iso(self.clock()), "ip": ip,
                     "reason": event_type, "window_seconds": self.policy.block_window_s}, False)
-            if self._once(ep, "block_ip", ip):
+            if self._once(ep, "block_ip", ip):             # recorded once per zone's incident
                 self._note(ep, "block_ip", f"block_ip -> {ip} ({event_type})")
 
     # ------------------------------------------------------------------ time
@@ -260,7 +264,7 @@ class Engine:
         """Called every few seconds: expire old events and close a zone's incident at risk 0."""
         with self.lock:
             now = self.clock() if now is None else now
-            live = set(self.scorer.physical_zones(now))
+            live = set(self.scorer.zones(now))
             for zone in list(self.episodes):
                 if zone not in live or self.scorer.score(now, zone) == 0:
                     self._close_episode(self.episodes[zone], now)
