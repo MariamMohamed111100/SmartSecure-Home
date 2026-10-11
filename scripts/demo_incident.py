@@ -7,14 +7,14 @@ Timeline (from the proposal):
     10:30:21  Motion detected - Garage      real simulators scenario `garage_intruder`
     10:30:24  Unknown face identified       security/alerts/vision   (played by this script)
     10:30:26  Port scan from 192.168.1.15   security/alerts/cyber    (played by this script)
-    10:30:28  Risk Score = 85 (High)        security/risk + security/incidents (played)
-    10:30:29  Garage lights ON              POST /devices/bulb_garage/command
-    10:30:30  Alarm activated               POST /devices/siren_main/command
+    10:30:28  Risk Score = 85 (High)        decided by the REAL engine service
+    10:30:29  Garage lights ON              engine -> home/garage/bulb/bulb_garage/cmd
+    10:30:30  Alarm activated               engine -> home/living_room/siren/siren_main/cmd
 
-Until the vision, cyber and engine modules exist, this script plays THEIR roles. It uses the
-broker's `admin` identity, so it proves the data path and the dashboard, not those modules'
-ACLs. Push notifications belong to the engine and are not simulated here.
-Afterwards it checks, through the API, that everything arrived and exits 1 if it did not.
+Only the two detections (vision, cyber) are staged here, with the broker's `admin` identity, so
+the run is deterministic. Scoring, the incident, the commands and the IP block are all produced
+by the engine; the script just waits for them and checks, through the API, that they arrived.
+Exits 1 if anything is missing (for instance when the engine container is not running).
 """
 from __future__ import annotations
 
@@ -133,7 +133,6 @@ def play(t: Transport, *, speed: float = 1.0, out=print) -> list[str]:
     """Run the incident. Returns the list of failed checks (empty = everything arrived)."""
     failures: list[str] = []
     run = uuid.uuid4().hex[:6]
-    incident_id = f"incident-demo-{run}"
 
     def pause(seconds: float) -> None:
         t.sleep(seconds / speed)
@@ -188,42 +187,31 @@ def play(t: Transport, *, speed: float = 1.0, out=print) -> list[str]:
     out("  t+5s  Port scan from 192.168.1.15 -> security/alerts/cyber")
     t.publish("security/alerts/cyber", scan)
 
-    pause(2)
-    decided = base + timedelta(seconds=7)
-    actions = ["log", "notify", "lights_on", "siren"]
-    out("  t+7s  Risk Score = 85 (High)    -> security/risk, security/incidents")
-    t.publish("security/risk", {
-        "ts": _iso(decided), "zone": "garage", "level": "high", "score": 85, "actions": actions,
-        "factors": [{"type": "motion.night", "weight": 20}, {"type": "face.unknown", "weight": 40},
-                    {"type": "cyber.port_scan", "weight": 25}]})
-    t.publish("security/incidents", {
-        "id": incident_id, "ts": _iso(decided), "zone": "garage", "level": "high", "score": 85,
-        "trigger": "face.unknown", "events": [motion, face["id"], scan["id"]], "actions": actions,
-        "summary": "Garage intruder: night motion + unknown face + port scan from 192.168.1.15"})
-
-    pause(1)
-    out("  t+8s  Garage lights ON          -> POST /devices/bulb_garage/command")
-    status_a, _ = t.api("POST", "/devices/bulb_garage/command",
-                        {"action": "on", "reason": incident_id})
-    pause(1)
-    out("  t+9s  Alarm activated           -> POST /devices/siren_main/command")
-    status_b, _ = t.api("POST", "/devices/siren_main/command",
-                        {"action": "on", "reason": incident_id})
-    if (status_a, status_b) != (200, 200):
-        failures.append(f"device commands rejected (HTTP {status_a}, {status_b})")
-
-    out("\n== Checking what the API now holds ==")
+    out("\n== Waiting for the engine (risk, incident, commands) ==")
 
     def check(name: str, ok: bool) -> None:
         out(("  PASS  " if ok else "  FAIL  ") + name)
         if not ok:
             failures.append(name)
 
-    incident = poll("the incident to be stored", lambda: body(f"/incidents/{incident_id}"))
+    def engine_incident():
+        """The engine's incident that contains our three events, once it reached 85."""
+        wanted = {motion, face["id"], scan["id"]}
+        for row in body("/incidents", limit=20) or []:
+            if wanted <= set(row["events"]) and row["score"] >= 85:
+                return row
+        return None
+
+    incident = poll("the engine to open an incident with all three events (is it running?)",
+                    engine_incident)
     if incident:
-        stored = (incident["score"], incident["level"], incident["integrity_ok"])
-        check("incident stored: score 85, High, integrity ok", stored == (85, "high", True))
-        timeline = body(f"/incidents/{incident_id}/events")
+        out(f"  t+7s  Risk Score = {incident['score']} ({incident['level'].title()})   <- engine")
+        check("incident: score 85, High, integrity ok, stored by the API",
+              (incident["score"], incident["level"], incident["integrity_ok"]) ==
+              (85, "high", True))
+        check("engine took the High actions: lights, siren, block_ip, notify",
+              {"lights_on", "siren", "block_ip", "notify"} <= set(incident["actions"]))
+        timeline = body(f"/incidents/{incident['id']}/events")
         check("timeline replays 3 events in order: motion, face, port scan",
               [e["type"] for e in timeline or []] ==
               ["motion.night", "face.unknown", "cyber.port_scan"])
@@ -237,12 +225,9 @@ def play(t: Transport, *, speed: float = 1.0, out=print) -> list[str]:
 
     poll("the garage light to report ON", lambda: state_of("bulb_garage").get("power") == "on")
     poll("the siren to report ON", lambda: state_of("siren_main").get("power") == "on")
-    check("garage light is ON", state_of("bulb_garage").get("power") == "on")
-    check("siren is ON", state_of("siren_main").get("power") == "on")
-    audit = body("/audit", limit=20) or []
-    check("both commands are in the audit trail with the incident id",
-          sum(1 for a in audit if a["action"] == "device.command"
-              and a["details"].get("reason") == incident_id) == 2)
+    check("garage light is ON (switched by the engine)",
+          state_of("bulb_garage").get("power") == "on")
+    check("siren is ON (switched by the engine)", state_of("siren_main").get("power") == "on")
 
     out("\n" + ("DEMO OK: everything arrived." if not failures else
                 f"DEMO FAILED: {len(failures)} problem(s)."))
