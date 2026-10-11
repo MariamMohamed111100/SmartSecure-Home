@@ -25,6 +25,7 @@ test:         ## Unit tests (no Docker needed)
 	pytest libs/common/tests services/simulators/tests -q
 	pytest services/api/tests -q
 	pytest services/vision/tests -q
+	pytest services/engine/tests -q
 
 lint:
 	ruff check .

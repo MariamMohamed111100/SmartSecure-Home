@@ -11,20 +11,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12", cache: pip}
-      - run: pip install ruff pytest jsonschema pyyaml gpiozero httpx -r services/api/requirements.txt -r services/vision/requirements.txt -e libs/common
+      - run: pip install ruff pytest jsonschema pyyaml gpiozero httpx -r services/api/requirements.txt -r services/vision/requirements.txt -r services/engine/requirements.txt -e libs/common
       - run: ruff check .
       - run: pytest libs/common/tests services/simulators/tests -q
       - name: "API tests (separate run, service modules share top-level names)"
         run: pytest services/api/tests -q
       - name: "Vision tests (separate run, same reason)"
         run: pytest services/vision/tests -q
+      - name: "Engine tests (separate run, same reason)"
+        run: pytest services/engine/tests -q
       - name: Validate contract and config files
         run: python scripts/validate_contract.py
       - name: Dependency vulnerability audit (pip-audit)
         run: |
           pip install pip-audit
           pip-audit -r services/api/requirements.txt -r services/simulators/requirements.txt \
-            -r services/vision/requirements.txt -r services/cyber/requirements.txt \
+            -r services/vision/requirements.txt -r services/engine/requirements.txt -r services/cyber/requirements.txt \
             -r services/engine/requirements.txt
 
   security:

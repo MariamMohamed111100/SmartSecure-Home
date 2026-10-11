@@ -1,13 +1,8 @@
-"""engine service: placeholder proving TLS, auth and ACLs work. Replace me."""
-import time
+"""engine service: risk scoring, correlation, incidents and automated response."""
+import logging
 
-from smartsecure_common import connect, start_heartbeat
-
-SERVICE = "engine"
+from eng.service import run
 
 if __name__ == "__main__":
-    client = connect(SERVICE)
-    start_heartbeat(client, SERVICE)
-    print(f"{SERVICE} started", flush=True)
-    while True:
-        time.sleep(60)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    run("engine")

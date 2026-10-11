@@ -1,0 +1,122 @@
+from conftest import REPO  # noqa: F401
+
+
+def demo(rig):
+    rig.send("pir_garage", "motion.night", "garage")
+    rig.send("vision", "face.unknown", "garage")
+    rig.send("cyber", "cyber.port_scan", "network", src_ip="192.168.1.15")
+
+
+def test_demo_scores_85_high_with_responses(rig):
+    demo(rig)
+    risk = rig.last("security/risk")
+    assert risk["score"] == 85 and risk["level"] == "high" and risk["zone"] == "garage"
+    inc = rig.last("security/incidents")
+    assert inc["score"] == 85 and inc["level"] == "high" and inc["zone"] == "garage"
+    assert len(inc["events"]) == 3
+    assert {"lights_on", "siren", "block_ip"} <= set(inc["actions"])
+    cmds = {t: p["action"] for t, p in rig.topic("home/")}
+    assert cmds == {"home/garage/bulb/bulb_garage/cmd": "on",
+                    "home/living_room/siren/siren_main/cmd": "on"}
+    (_, block), = rig.topic("system/block")
+    assert block["ip"] == "192.168.1.15" and block["window_seconds"] == 3600
+
+
+def test_risk_is_retained_and_incident_id_is_stable(rig):
+    demo(rig)
+    assert all(r for t, _, r in rig.out if t == "security/risk")
+    assert len({p["id"] for _, p in rig.topic("security/incidents")}) == 1
+
+
+def test_no_duplicate_commands_on_more_events(rig):
+    demo(rig)
+    rig.send("vision", "face.unknown", "garage")
+    assert len(rig.topic("home/")) == 2 and len(rig.topic("system/block")) == 1
+
+
+def test_duplicate_event_id_ignored(rig):
+    ev = rig.send("vision", "face.unknown", "garage")
+    rig.engine.on_message("security/alerts/vision", ev.model_dump_json())
+    assert rig.last("security/risk")["score"] == 40
+
+
+def test_decay_closes_incident_and_silences_siren(rig):
+    demo(rig)
+    rig.advance(11 * 60)
+    risk = rig.last("security/risk")
+    assert risk["score"] == 0 and risk["level"] == "low"
+    inc = rig.last("security/incidents")
+    assert "closed" in inc["summary"].lower()
+    assert ("home/living_room/siren/siren_main/cmd", "off") in [
+        (t, p["action"]) for t, p in rig.topic("home/")]
+
+
+def test_repeat_cap(rig):
+    for _ in range(6):
+        rig.send("vision", "face.unknown", "garage")
+    assert rig.last("security/risk")["score"] == 100      # 3 x 40 would be 120: capped
+
+
+def test_correlation_bonus_once(rig):
+    rig.send("vision", "face.unknown", "entrance")
+    rig.send("lock_front", "lock.login_failed", "entrance")
+    risk = rig.last("security/risk")
+    assert risk["score"] == 95
+    assert any(f["type"].startswith("correlation.") for f in risk["factors"])
+
+
+def test_intrusion_critical_never_unlocks(rig):
+    for t, z in [("face.unknown", "entrance"), ("lock.login_failed", "entrance"),
+                 ("door.open", "entrance")]:
+        rig.send("x", t, z)
+    assert rig.last("security/risk")["level"] == "critical"
+    assert not [p for t, p in rig.topic("home/") if p["action"] in ("unlock", "lock")]
+
+
+def test_fire_critical_unlocks_doors(rig):
+    rig.send("smoke_kitchen", "fire.detected", "kitchen")
+    cmds = [(t, p["action"]) for t, p in rig.topic("home/")]
+    assert ("home/entrance/lock/lock_front/cmd", "unlock") in cmds
+
+
+def test_water_leak_closes_valve(rig):
+    rig.send("leak", "water.leak", "kitchen")
+    assert ("home/kitchen/valve/valve_main/cmd", "close") in [
+        (t, p["action"]) for t, p in rig.topic("home/")]
+
+
+def test_bad_input_is_dropped(rig):
+    e = rig.engine
+    e.on_message("security/alerts/vision", b"not json")
+    e.on_message("security/alerts/vision", b"[1]")
+    e.on_message("security/alerts/vision", b"{}")
+    e.on_message("security/alerts/vision", b"x" * 70000)
+    e.on_message("home/garage/pir/p/event",
+                 b'{"id":"1","ts":"t","source":"s","type":"motion.night","zone":"kitchen",'
+                 b'"severity_hint":"info","data":{}}')           # zone != topic
+    e.on_message("security/alerts/engine", b"{}")                 # own topic ignored
+    assert not rig.out
+
+
+def test_unknown_event_type_scores_nothing(rig):
+    rig.send("x", "weird.thing", "garage")
+    assert rig.last("security/risk")["score"] == 0
+
+
+def test_loopback_ip_is_not_blocked(rig):
+    rig.send("pir", "motion.night", "garage")
+    rig.send("vision", "face.unknown", "garage")
+    rig.send("cyber", "cyber.port_scan", "network", src_ip="127.0.0.1")
+    assert not rig.topic("system/block")
+
+
+def test_payload_shapes_follow_the_contract(rig):
+    import re
+    demo(rig)
+    risk, inc = rig.last("security/risk"), rig.last("security/incidents")
+    assert set(risk) == {"ts", "zone", "level", "score", "factors", "actions"}
+    assert type(risk["score"]) is int and re.fullmatch(r"[a-z0-9_]+", risk["zone"])
+    assert all(set(f) == {"type", "weight"} for f in risk["factors"])
+    assert set(inc) == {"id", "ts", "zone", "level", "score", "trigger", "events", "actions",
+                        "summary"}
+    assert 1 <= len(inc["id"]) <= 100 and len(inc["summary"]) <= 4000
