@@ -1,5 +1,5 @@
 # One Dockerfile for every Python service. Build with --build-arg SERVICE=<folder in services/>
-FROM python:3.12-slim
+FROM python:3.14-slim
 ARG SERVICE
 # optional extra OS packages for one service (cyber: iptables for the real IPS backend)
 ARG APT_EXTRA=""
